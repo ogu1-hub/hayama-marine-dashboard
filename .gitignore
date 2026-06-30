@@ -1,0 +1,11 @@
+# 機密情報 (パスワード等) — 絶対にコミットしない
+.env
+
+# 依存パッケージ (npm install で再生成)
+node_modules/
+
+# ログ・一時ファイル
+*.log
+debug_*.js
+scratchpad/
+.DS_Store

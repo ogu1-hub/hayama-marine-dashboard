@@ -1,0 +1,18 @@
+{
+  "name": "hayama-marine-dashboard",
+  "version": "1.0.0",
+  "description": "葉山・一色海岸特化 24時間 気象・海洋データ統合ダッシュボード",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "postinstall": "playwright install chromium"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "playwright": "^1.45.0"
+  }
+}

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#f1f5f9" />
+<title>🌊 一色海岸 24h</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: { colors: { ocean: { 600:'#0284c7', 700:'#0369a1' } } } }
+  }
+</script>
+<style>
+  html, body { -webkit-text-size-adjust: 100%; }
+  body { background: linear-gradient(180deg, #eef6fb 0%, #f8fafc 240px, #f8fafc 100%); }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  .scroller { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+  .scroller::-webkit-scrollbar { height: 7px; }
+  .scroller::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+  .scroller::-webkit-scrollbar-track { background: transparent; }
+  .sticky-col { position: sticky; left: 0; z-index: 5; box-shadow: 1px 0 0 #e2e8f0; }
+  th.sticky-col { z-index: 6; }
+  #timelineTable th, #timelineTable td { white-space: nowrap; }
+</style>
+</head>
+<body class="text-slate-800 min-h-screen">
+
+<div class="mx-auto max-w-[1600px] px-1 sm:px-4 py-3 sm:py-5">
+
+  <!-- ヘッダー -->
+  <header class="mb-3">
+    <div class="flex items-center justify-between gap-2">
+      <h1 class="text-lg sm:text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-1.5 leading-tight text-slate-900">
+        <span>🌊</span> 一色海岸 <span class="text-ocean-600">24h</span>
+      </h1>
+      <button id="reloadBtn" class="shrink-0 px-3 py-2 rounded-xl bg-ocean-600 active:bg-ocean-700 hover:bg-ocean-700 text-white text-xs font-semibold shadow-sm transition">↻ 更新</button>
+    </div>
+    <div id="updatedAt" class="text-slate-500 text-[11px] sm:text-xs mt-1">取得中…</div>
+    <p class="text-slate-400 text-[10px] sm:text-xs mt-0.5">葉山町特化 / 天気・気温・降水量＝Yahoo!天気(葉山町) ／ 潮位＝海快晴</p>
+  </header>
+
+  <!-- 潮回りパネル -->
+  <section id="tidePanel" class="rounded-2xl border border-slate-200 bg-white p-3 sm:p-5 mb-3 shadow-sm">
+    <div class="animate-pulse text-slate-400 text-sm">🌙 潮回り情報を取得しています…</div>
+  </section>
+
+  <!-- ソース状態 -->
+  <div id="sourceStatus" class="flex flex-wrap gap-1.5 mb-2 text-[10px]"></div>
+
+  <!-- 比較タブ + スクロールヒント -->
+  <div class="flex items-center justify-between gap-2 mb-1.5">
+    <span class="sm:hidden text-[10px] text-slate-400 flex items-center gap-1 pl-1">
+      <span class="animate-pulse">→</span> 右側で比較
+    </span>
+    <span class="hidden sm:block text-xs text-slate-400">右側の比較項目を切替 ▶</span>
+    <div class="inline-flex rounded-xl bg-slate-200 p-0.5 shrink-0">
+      <button data-tab="wind" class="tab-btn px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition">🌬️風</button>
+      <button data-tab="wave" class="tab-btn px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition">🌊波</button>
+      <button data-tab="both" class="tab-btn px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition">🌊🌬️波風</button>
+    </div>
+  </div>
+
+  <!-- 統合タイムラインテーブル -->
+  <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div class="scroller">
+      <table id="timelineTable" class="min-w-full text-xs sm:text-sm num">
+        <thead id="thead"></thead>
+        <tbody id="tbody">
+          <tr><td class="p-8 text-center text-slate-400">読み込み中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 凡例 -->
+  <footer class="mt-3 text-[10px] sm:text-[11px] text-slate-500 leading-relaxed">
+    <div class="flex flex-wrap gap-1 mb-1">
+      <span class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">🟠 風5m/s+</span>
+      <span class="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">🔴 8m/s+</span>
+      <span class="inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200">☔ 降水1mm/h+</span>
+    </div>
+左の固定列(天気・気温・降水量・潮位)＝Yahoo!天気＋海快晴。右の比較はタブで「風／波／波風」を切替（波風タブは気温・降水・潮位を省き風波を一覧）。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。
+  </footer>
+</div>
+
+<script>
+const $ = (s, el=document) => el.querySelector(s);
+let DATA = null;
+let activeTab = 'wind';
+let GEN_DATE = { md: '', wd: '' }; // 取得日(簡易: M/D, 曜日)
+
+function windCellClass(speed) {
+  if (speed == null) return '';
+  if (speed >= 8) return 'bg-red-100';
+  if (speed >= 5) return 'bg-amber-100';
+  return '';
+}
+function fmt(v, digits=0, suffix='') {
+  if (v === null || v === undefined || isNaN(v)) return '<span class="text-slate-300">--</span>';
+  return (digits ? Number(v).toFixed(digits) : Math.round(v)) + suffix;
+}
+
+// 風セル (方位を小さく / 風速を大きく単位なし / 地形アラート)。lb=左境界線クラス
+function windCell(w, lb) {
+  const cls = windCellClass(w.windSpeed);
+  const onshore = /オンショア/.test(w.windAlert);
+  const alert = w.windAlert
+    ? `<div class="text-[8px] leading-none whitespace-normal break-all ${onshore?'text-red-600':'text-sky-600'}">${onshore?'面荒れ':'沖出し'}</div>`
+    : '';
+  return `<td class="px-0.5 py-1.5 text-center ${lb||'border-l border-slate-100'} ${cls}">
+    <div class="text-[9px] text-slate-500 leading-tight">${w.windDir||'--'}</div>
+    <div class="text-base sm:text-xl font-bold leading-tight ${w.windSpeed>=8?'text-red-700':w.windSpeed>=5?'text-amber-700':'text-slate-700'}">${fmt(w.windSpeed,1)}</div>
+    ${alert}
+  </td>`;
+}
+
+// 波セル (波高を大きく単位なし)。lb=左境界線クラス
+function waveCell(wave, fromFallback, color, lb) {
+  return `<td class="px-1 py-1.5 text-center ${lb||'border-l border-slate-100'}">
+    <span class="text-lg sm:text-xl font-bold ${color}">${fmt(wave,1)}</span>
+    ${fromFallback?'<span class="block text-[8px] text-slate-400 leading-none">推定</span>':''}
+  </td>`;
+}
+// 波セルのソース別ラッパ
+function umiWaveCell(r, lb) { return waveCell(r.umikaisei.wave, r.umikaisei.waveFromFallback, r.umikaisei.waveFromFallback?'text-slate-500':'text-emerald-600', lb); }
+function windyWaveCell(r, lb) { return waveCell(r.windy.wave, false, 'text-indigo-600', lb); }
+
+function chip(ok, label) {
+  const c = ok ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+               : 'bg-rose-50 text-rose-600 border-rose-300';
+  return `<span class="px-2 py-0.5 rounded-full border ${c}">${ok?'●':'○'} ${label}</span>`;
+}
+
+function renderTide(tide) {
+  const panel = $('#tidePanel');
+  const highs = (tide.highs||[]).map(h=>`<span class="px-2 py-1 rounded-lg bg-rose-50 border border-rose-100 text-rose-700 num text-xs sm:text-sm whitespace-nowrap">🛑 満潮 ${h.time} <b>${h.level}cm</b></span>`).join('');
+  const lows  = (tide.lows ||[]).map(l=>`<span class="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-700 num text-xs sm:text-sm whitespace-nowrap">🟢 干潮 ${l.time} <b>${l.level}cm</b></span>`).join('');
+  const hasTide = (tide.highs||[]).length || (tide.lows||[]).length;
+  panel.innerHTML = `
+    <div class="flex items-center gap-3 mb-2">
+      <div class="text-center leading-none pr-3 border-r border-slate-200">
+        <div class="text-2xl sm:text-3xl font-extrabold text-slate-900 num">${GEN_DATE.md || '--'}</div>
+        <div class="text-xs sm:text-sm font-bold text-ocean-600">(${GEN_DATE.wd || '-'})</div>
+      </div>
+      <span class="text-3xl sm:text-4xl">🌕</span>
+      <div>
+        <div class="text-[10px] text-slate-400">今日の潮回り</div>
+        <div class="text-xl sm:text-2xl font-bold tracking-wide text-slate-900">${tide.tideName || '<span class=\'text-slate-400 text-base\'>潮名取得不可</span>'}${tide.moonAge!=null?` <span class="text-[11px] text-slate-400 font-normal">月齢${tide.moonAge}</span>`:''}</div>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-1.5">${highs}${lows || (hasTide?'':'<span class="text-slate-400 text-xs col-span-2">海快晴の潮汐データ未取得</span>')}</div>
+    <div class="mt-2.5 text-xs sm:text-sm text-ocean-700 bg-sky-50 border border-sky-100 rounded-xl px-3 py-2 leading-relaxed">
+      💡 ${tide.advice || '—'}
+    </div>`;
+}
+
+const SEP_L = 'border-l-2 border-ocean-300';   // 比較グループ先頭の太線
+const SEP_WAVE = 'border-l-2 border-indigo-300'; // 波風タブで波グループの区切り
+
+function renderTable(timeline) {
+  const thead = $('#thead');
+  const isBoth = activeTab === 'both';
+  const windTh = (src, lb) => `<th class="px-0.5 py-1 bg-sky-50 ${lb||''}"><div class="text-[11px] sm:text-xs text-ocean-700 font-bold">${src}</div><div class="text-[8px] text-slate-400 font-normal">風 m/s</div></th>`;
+  const waveTh = (src, lb) => `<th class="px-1 py-1 bg-indigo-50 ${lb||''}"><div class="text-[11px] sm:text-xs text-indigo-700 font-bold">${src}</div><div class="text-[8px] text-slate-400 font-normal">波 m</div></th>`;
+
+  // 固定列ヘッダ (波風タブは 時間+天気 のみ)
+  let fixedHead = `
+      <th class="sticky-col bg-slate-100 px-1.5 sm:px-3 py-1 text-left text-[10px] sm:text-xs">時間</th>
+      <th class="px-1 py-1 text-[10px] sm:text-xs">天気</th>`;
+  if (!isBoth) fixedHead += `
+      <th class="px-1 py-1 text-[10px] sm:text-xs">🌡️気温<span class="block text-[8px] text-slate-400 font-normal">℃</span></th>
+      <th class="px-1 py-1 text-[10px] sm:text-xs">☔降水<span class="block text-[8px] text-slate-400 font-normal">mm</span></th>
+      <th class="px-1 py-1 text-[10px] sm:text-xs">🌑潮位<span class="block text-[8px] text-slate-400 font-normal">cm</span></th>`;
+
+  // 比較列ヘッダ
+  let tabHead;
+  if (activeTab === 'wind') tabHead = windTh('Yahoo', SEP_L) + windTh('海快晴') + windTh('Windy');
+  else if (activeTab === 'wave') tabHead = waveTh('海快晴', SEP_L) + waveTh('Windy');
+  else tabHead = windTh('Yahoo', SEP_L) + windTh('海快晴') + windTh('Windy') + waveTh('海快晴', SEP_WAVE) + waveTh('Windy');
+
+  thead.innerHTML = `<tr class="bg-slate-100 text-slate-500 border-b border-slate-200">${fixedHead}${tabHead}</tr>`;
+
+  const tbody = $('#tbody');
+  tbody.innerHTML = timeline.map((r, i) => {
+    const nightCls = r.isNight ? 'text-slate-400' : '';
+    const rainWet = (r.yahoo.rainMm != null && r.yahoo.rainMm >= 1);
+    const rowBg = i % 2 ? 'bg-white' : 'bg-slate-50/70';
+    const stickyBg = i % 2 ? 'bg-white' : 'bg-[#f5f8fb]';
+    const badge = r.tideBadge
+      ? `<span class="block text-[8px] mt-0.5 ${/満潮/.test(r.tideBadge)?'text-rose-600':'text-emerald-600'}">${r.tideBadge}</span>`
+      : '';
+
+    // 固定列セル
+    let fixed = `
+      <td class="sticky-col ${stickyBg} px-1.5 sm:px-3 py-1.5 font-bold text-sm text-slate-700">
+        ${r.label}
+        <span class="block text-[8px] text-slate-400 font-normal">${r.dateLabel}</span>
+        ${badge}
+      </td>
+      <td class="px-0.5 py-1.5 text-center border-l border-slate-100">
+        <div class="text-lg leading-none">${r.yahoo.icon||''}</div>
+        <div class="text-[8px] text-slate-400 leading-tight">${r.yahoo.desc||''}</div>
+      </td>`;
+    if (!isBoth) {
+      let tideCell = '<span class="text-slate-300">--</span>';
+      if (r.umikaisei.tide != null) {
+        const arrow = r.umikaisei.tideTrend === 'up' ? '📈'
+                    : r.umikaisei.tideTrend === 'down' ? '📉' : '';
+        tideCell = `<span class="text-lg sm:text-xl font-bold num text-slate-700 leading-none">${r.umikaisei.tide}</span><span class="text-[11px] ml-0.5">${arrow}</span>`;
+      }
+      fixed += `
+      <td class="px-0.5 py-1.5 text-center text-lg sm:text-xl font-bold text-slate-700">${fmt(r.yahoo.temp,0)}</td>
+      <td class="px-0.5 py-1.5 text-center text-lg sm:text-xl font-bold ${rainWet?'bg-sky-100 text-sky-700':'text-slate-600'}">${fmt(r.yahoo.rainMm,1)}</td>
+      <td class="px-0.5 py-1.5 text-center">${tideCell}</td>`;
+    }
+
+    // 比較列セル
+    let tabCells;
+    if (activeTab === 'wind') tabCells = windCell(r.yahoo, SEP_L) + windCell(r.umikaisei) + windCell(r.windy);
+    else if (activeTab === 'wave') tabCells = umiWaveCell(r, SEP_L) + windyWaveCell(r);
+    else tabCells = windCell(r.yahoo, SEP_L) + windCell(r.umikaisei) + windCell(r.windy) + umiWaveCell(r, SEP_WAVE) + windyWaveCell(r);
+
+    return `<tr class="${rowBg} ${nightCls} border-t border-slate-100 active:bg-sky-50">${fixed}${tabCells}</tr>`;
+  }).join('');
+}
+
+function syncTabButtons() {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.dataset.tab === activeTab) b.className = b.className.replace(/(bg-\S+|text-\S+)/g,'') + ' bg-white text-ocean-700 shadow-sm';
+    else b.className = b.className.replace(/(bg-white|text-ocean-700|shadow-sm)/g,'') + ' text-slate-500';
+    b.className = 'tab-btn px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ' +
+      (b.dataset.tab === activeTab ? 'bg-white text-ocean-700 shadow-sm' : 'text-slate-500');
+  });
+}
+
+async function load(force=false) {
+  $('#updatedAt').textContent = '取得中…（海快晴ログイン中・最大30秒）';
+  try {
+    const res = await fetch('/api/weather' + (force?'?force=1':''));
+    if (!res.ok) throw new Error('APIエラー HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    DATA = data;
+
+    // 取得日(簡易表示用) を先に確定
+    const dt = new Date(data.generatedAt);
+    const wd = ['日','月','火','水','木','金','土'][dt.getDay()];
+    GEN_DATE = { md: `${dt.getMonth()+1}/${dt.getDate()}`, wd };
+
+    renderTide(data.tide || {});
+    renderTable(data.timeline || []);
+
+    const s = data.sources || {};
+    $('#sourceStatus').innerHTML =
+      chip(s.yahoo,'Yahoo') +
+      chip(s.umikaisei,'海快晴波/風') +
+      chip(s.umikaiseiTide,'海快晴潮汐') +
+      chip(s.openMeteo,'Open-Meteo');
+
+    const hm = `${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+    $('#updatedAt').textContent = `🕒 取得 ${hm}${data.cached?' (cache)':''}`;
+  } catch (e) {
+    $('#updatedAt').textContent = '⚠ 取得失敗';
+    $('#tbody').innerHTML = `<tr><td colspan="9" class="p-6 text-center text-rose-500 text-sm leading-relaxed">
+      取得失敗: ${e.message}<br>
+      <span class="text-slate-400 text-xs">※このアプリはローカルサーバー(node server.js)経由でのみ動作します。<br>http://localhost:3000 を開いているか確認してください。</span>
+    </td></tr>`;
+  }
+}
+
+// タブ切替
+document.querySelectorAll('.tab-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    activeTab = b.dataset.tab;
+    syncTabButtons();
+    if (DATA) renderTable(DATA.timeline || []);
+  });
+});
+$('#reloadBtn').addEventListener('click', () => load(true));
+syncTabButtons();
+load();
+</script>
+</body>
+</html>
