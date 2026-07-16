@@ -1,0 +1,43 @@
+name: データ更新 (data.json)
+
+# 実行タイミング
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # 30分ごとに自動実行(UTC基準。多少遅延することあり)
+  workflow_dispatch: {}        # 「Run workflow」ボタンで手動実行も可能
+
+# data.json をコミット/プッシュするための書き込み権限
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Node.js を用意
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 依存パッケージをインストール
+        run: npm ci
+
+      - name: data.json を生成
+        env:
+          TZ: Asia/Tokyo
+          UMIKAISEI_POINT_ID: '01170052'
+          YAHOO_URL: https://weather.yahoo.co.jp/weather/jp/14/4610/14301.html
+          HAYAMA_LAT: '35.27'
+          HAYAMA_LON: '139.58'
+        run: node generate.js
+
+      - name: 変更があればコミット＆プッシュ
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.json
+          git diff --staged --quiet || git commit -m "自動更新: data.json ($(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M'))"
+          git push
