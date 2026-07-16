@@ -245,39 +245,215 @@ function syncTabButtons() {
   });
 }
 
+/* ======================================================================
+ * ライブ取得層 — 海快晴/Open-Meteo はCORS許可されているためブラウザから直接取得。
+ * これにより表は常に「今」から始まり、GitHub Actionsの遅延の影響を受けない。
+ * Yahoo!天気(天気/気温/降水量)だけはCORS不可のため data.json (定期生成) を使う。
+ * ====================================================================== */
+const UMI_API = 'https://api1.namidensetsu.com/api';
+const UMI_POINT_ID = '01170052';   // 一色海岸
+const LAT = 35.27, LON = 139.58, FCST_DAYS = 7;
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const isoLocal = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:00`;
+const DIRS16 = ['北','北北東','北東','東北東','東','東南東','南東','南南東','南','南南西','南西','西南西','西','西北西','北西','北北西'];
+const degToJpDir = (deg) => (deg == null || isNaN(deg)) ? '--' : DIRS16[Math.round(deg/22.5) % 16];
+const degToArrow = (deg) => { if (deg == null || isNaN(deg)) return ''; return ['⬇️','↙️','⬅️','↖️','⬆️','↗️','➡️','↘️'][Math.round(deg/45) % 8]; };
+function localWindAlert(deg) {
+  if (deg == null || isNaN(deg)) return '';
+  const d = ((deg % 360) + 360) % 360;
+  if (d >= 100 && d <= 260) return '(面荒れ注意・オンショア)';
+  if (d <= 80 || d >= 280) return '(沖出しの風・オフショア)';
+  return '';
+}
+const numOr = (v) => { if (v == null) return null; const n = parseFloat(v); return (isNaN(n) || n <= -999) ? null : n; };
+const dirCodeToDeg = (c) => (c == null || c === '') ? null : ((((+c % 16) + 16) % 16) * 22.5); // 0=北
+const umiDtToKey = (dt) => { const s = String(dt); return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}T${s.slice(8,10)}:00`; };
+const jget = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
+
+// 海快晴の公開API (認証不要) から 波/風/潮位/潮汐/月齢 をライブ取得
+async function fetchUmikaiseiLive() {
+  const now = new Date();
+  const ymd = `${now.getFullYear()}${pad2(now.getMonth()+1)}${pad2(now.getDate())}`;
+  const q = (p, extra) => `${UMI_API}/${p}?apiver=1.0&os=web&id=${UMI_POINT_ID}${extra || ''}`;
+  const [comb, td, moon] = await Promise.all([
+    jget(q('point_comb.php')).catch(() => null),
+    jget(q('tide.php', `&date=${ymd}`)).catch(() => null),
+    jget(q('moonphase.php', `&date=${ymd.slice(0,6)}`)).catch(() => null),
+  ]);
+  const out = { tide: { tideName: null, moonAge: null, highs: [], lows: [], advice: '' }, hourly: {} };
+
+  if (comb && Array.isArray(comb.datadates)) {
+    const ordered = [];
+    for (const d of comb.datadates) {
+      const key = umiDtToKey(d.dt);
+      const pick = (id) => ((d.foredata || []).find((f) => f.dataid === id) || {}).contents || {};
+      const wrf = pick('WRFR01'), swan = pick('SWANR01');
+      const wDeg = dirCodeToDeg(wrf.wdc), vDeg = dirCodeToDeg(swan.dir);
+      out.hourly[key] = {
+        windDeg: wDeg, windDir: wDeg != null ? degToJpDir(wDeg) : '--', windSpeed: numOr(wrf.ws),
+        waveDir: vDeg != null ? degToJpDir(vDeg) : '--', wave: numOr(swan.ht), swellPeriod: numOr(swan.pd),
+        tide: numOr(d.tidedata),
+      };
+      ordered.push(key);
+    }
+    for (let i = 0; i < ordered.length; i++) {
+      const cur = out.hourly[ordered[i]], next = out.hourly[ordered[i+1]], prev = out.hourly[ordered[i-1]];
+      let t = null;
+      if (cur.tide != null) {
+        if (next && next.tide != null) t = next.tide > cur.tide ? 'up' : (next.tide < cur.tide ? 'down' : null);
+        else if (prev && prev.tide != null) t = cur.tide > prev.tide ? 'up' : (cur.tide < prev.tide ? 'down' : null);
+      }
+      cur.tideTrend = t;
+    }
+  }
+  const obs = td && Array.isArray(td.obs) ? td.obs[0] : null;
+  if (obs && obs.tide) {
+    out.tide.tideName = obs.tide.ts || null;
+    out.tide.highs = (obs.tide.high || []).map((h) => ({ time: h.time, level: parseInt(h.hgt, 10) }));
+    out.tide.lows = (obs.tide.low || []).map((l) => ({ time: l.time, level: parseInt(l.hgt, 10) }));
+  }
+  if (moon && Array.isArray(moon.obs)) {
+    const hit = moon.obs.find((o) => String(o.dt).slice(0, 8) === ymd) || moon.obs[0];
+    if (hit && hit.age != null) out.tide.moonAge = Math.round(parseFloat(hit.age));
+  }
+  return out;
+}
+
+// Open-Meteo: Marine(波) + ICON(風) + ECMWF(風) + 降水確率 をライブ取得
+async function fetchOpenMeteoLive() {
+  const res = {};
+  const setH = (data, fields) => {
+    if (!data || !data.hourly) return;
+    const h = data.hourly;
+    h.time.forEach((t, i) => {
+      const k = t.slice(0, 13) + ':00';
+      res[k] = res[k] || {};
+      for (const [s, d] of fields) res[k][d] = h[s][i];
+    });
+  };
+  const base = `latitude=${LAT}&longitude=${LON}&forecast_days=${FCST_DAYS}&timezone=Asia%2FTokyo`;
+  const [marine, icon, ecmwf, pop] = await Promise.all([
+    jget(`https://marine-api.open-meteo.com/v1/marine?${base}&hourly=wave_height,wave_direction,wave_period`).catch(() => null),
+    jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=icon_seamless&wind_speed_unit=ms`).catch(() => null),
+    jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=ecmwf_ifs025&wind_speed_unit=ms`).catch(() => null),
+    jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=precipitation_probability`).catch(() => null),
+  ]);
+  setH(marine, [['wave_height','wave'], ['wave_direction','waveDeg'], ['wave_period','wavePeriod']]);
+  setH(icon, [['wind_speed_10m','windSpeed'], ['wind_direction_10m','windDeg']]);
+  setH(ecmwf, [['wind_speed_10m','windSpeedE'], ['wind_direction_10m','windDegE']]);
+  setH(pop, [['precipitation_probability','pop']]);
+  return res;
+}
+
+// 「今」を起点にタイムラインを組み立てる (Yahooはdata.jsonの時刻別データを利用)
+function buildTimelineClient(om, umi, yahooByKey) {
+  const now = new Date(); now.setMinutes(0, 0, 0);
+  const nowMs = now.getTime();
+  const umiKeys = Object.keys(umi.hourly || {});
+  const srcKeys = umiKeys.length ? umiKeys : Object.keys(om);
+  let maxHours = 24;
+  for (const k of srcKeys) {
+    const h = Math.floor((new Date(k).getTime() - nowMs) / 3600000);
+    if (h > maxHours) maxHours = h;
+  }
+  maxHours = Math.min(maxHours, 168);
+
+  const tl = [];
+  for (let i = 0; i <= maxHours; i++) {
+    const d = new Date(nowMs + i * 3600000);
+    const key = isoLocal(d);
+    const o = om[key] || {}, u = (umi.hourly || {})[key] || {}, y = yahooByKey[key] || {};
+    const uWindDeg = u.windDeg ?? o.windDeg ?? null;
+    const uWindSpd = u.windSpeed ?? o.windSpeed ?? null;
+    tl.push({
+      key, hour: d.getHours(), label: `${pad2(d.getHours())}:00`, dateLabel: `${d.getMonth()+1}/${d.getDate()}`,
+      isNight: d.getHours() >= 0 && d.getHours() <= 4,
+      yahoo: {
+        icon: y.icon || '', desc: y.desc || '', temp: y.temp ?? null, rainMm: y.rainMm ?? null,
+        pop: y.pop ?? o.pop ?? null, windDir: y.windDir || '--', windDeg: y.windDeg ?? null,
+        windArrow: y.windArrow || '', windSpeed: y.windSpeed ?? null, windAlert: y.windAlert || '',
+      },
+      umikaisei: {
+        wave: u.wave ?? o.wave ?? null, waveFromFallback: u.wave == null && o.wave != null,
+        windDir: u.windDir || (o.windDeg != null ? degToJpDir(o.windDeg) : '--'),
+        windDeg: uWindDeg, windArrow: degToArrow(uWindDeg), windSpeed: uWindSpd,
+        windAlert: uWindSpd >= 5 ? localWindAlert(uWindDeg) : '',
+        tide: u.tide ?? null, tideTrend: u.tideTrend ?? null,
+      },
+      windy: {
+        wave: o.wave ?? null, windDir: o.windDeg != null ? degToJpDir(o.windDeg) : '--',
+        windDeg: o.windDeg ?? null, windArrow: degToArrow(o.windDeg), windSpeed: o.windSpeed ?? null,
+        windAlert: o.windSpeed >= 5 ? localWindAlert(o.windDeg) : '',
+      },
+      ecmwf: {
+        windDir: o.windDegE != null ? degToJpDir(o.windDegE) : '--', windDeg: o.windDegE ?? null,
+        windArrow: degToArrow(o.windDegE), windSpeed: o.windSpeedE ?? null,
+        windAlert: o.windSpeedE >= 5 ? localWindAlert(o.windDegE) : '',
+      },
+    });
+  }
+  return tl;
+}
+
+// 満潮/干潮バッジ(当日のみ)とアドバイスを付与
+function annotateTideClient(timeline, tide) {
+  const events = [...(tide.highs || []).map((h) => ({ type: 'high', ...h })), ...(tide.lows || []).map((l) => ({ type: 'low', ...l }))];
+  const now = new Date();
+  const todayLabel = `${now.getMonth()+1}/${now.getDate()}`;
+  timeline.forEach((row) => {
+    let badge = null;
+    if (row.dateLabel === todayLabel) {
+      for (const ev of events) {
+        if (parseInt(ev.time.split(':')[0], 10) === row.hour) badge = ev.type === 'high' ? '🛑 満潮間近' : '🟢 干潮間近';
+      }
+    }
+    row.tideBadge = badge;
+  });
+  tide.advice = events.length
+    ? `本日は${tide.tideName || ''}。満潮${(tide.highs[0] || {}).time || '--'}・干潮${(tide.lows[0] || {}).time || '--'}を目安に行動を。`
+    : '潮汐データ取得中…';
+  return timeline;
+}
+
 async function load() {
   $('#updatedAt').textContent = '読み込み中…';
   try {
-    // GitHub Actionsが定期生成した data.json を読む(キャッシュ回避で毎回最新を取得)
-    const res = await fetch('./data.json?t=' + Date.now());
-    if (!res.ok) throw new Error('data.json が見つかりません (HTTP ' + res.status + ')');
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    DATA = data;
+    const [dj, umi, om] = await Promise.all([
+      fetch('./data.json?t=' + Date.now()).then((r) => r.ok ? r.json() : {}).catch(() => ({})),
+      fetchUmikaiseiLive().catch(() => ({ tide: {}, hourly: {} })),
+      fetchOpenMeteoLive().catch(() => ({})),
+    ]);
+    // data.json の時刻別Yahooデータを取り出す
+    const yahooByKey = {};
+    (dj.timeline || []).forEach((r) => { yahooByKey[r.key] = r.yahoo; });
 
-    // 取得日(簡易表示用) を先に確定
-    const dt = new Date(data.generatedAt);
-    const wd = ['日','月','火','水','木','金','土'][dt.getDay()];
-    GEN_DATE = { md: `${dt.getMonth()+1}/${dt.getDate()}`, wd };
+    let timeline = buildTimelineClient(om, umi, yahooByKey);
+    timeline = annotateTideClient(timeline, umi.tide || {});
+    if (!timeline.length) throw new Error('データを取得できませんでした');
+    DATA = { timeline, tide: umi.tide || {} };
 
-    renderTide(data.tide || {});
-    renderTable(data.timeline || []);
+    const now = new Date();
+    GEN_DATE = { md: `${now.getMonth()+1}/${now.getDate()}`, wd: ['日','月','火','水','木','金','土'][now.getDay()] };
 
-    const s = data.sources || {};
+    renderTide(umi.tide || {});
+    renderTable(timeline);
+
     $('#sourceStatus').innerHTML =
-      chip(s.yahoo,'Yahoo') +
-      chip(s.umikaisei,'海快晴波/風') +
-      chip(s.umikaiseiTide,'海快晴潮汐') +
-      chip(s.openMeteo,'Open-Meteo');
+      chip(Object.keys(yahooByKey).length > 0, 'Yahoo') +
+      chip(Object.keys(umi.hourly || {}).length > 0, '海快晴波/風') +
+      chip(((umi.tide || {}).highs || []).length > 0, '海快晴潮汐') +
+      chip(Object.keys(om).length > 0, 'Open-Meteo');
 
-    const hm = `${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
-    const md = `${dt.getMonth()+1}/${dt.getDate()}`;
-    $('#updatedAt').textContent = `🕒 データ更新 ${md} ${hm}`;
+    const hm = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+    const yj = dj.generatedAt ? new Date(dj.generatedAt) : null;
+    $('#updatedAt').textContent = `🕒 ${hm} 時点（波・風・潮位はライブ取得）`
+      + (yj ? ` ／ Yahoo天気 ${yj.getMonth()+1}/${yj.getDate()} ${pad2(yj.getHours())}:${pad2(yj.getMinutes())}` : '');
   } catch (e) {
     $('#updatedAt').textContent = '⚠ 取得失敗';
     $('#tbody').innerHTML = `<tr><td colspan="12" class="p-6 text-center text-rose-500 text-sm leading-relaxed">
       データ読み込み失敗: ${e.message}<br>
-      <span class="text-slate-400 text-xs">データ更新(GitHub Actions)がまだ実行されていない可能性があります。<br>リポジトリの Actions タブから手動実行するか、しばらく待って再度お試しください。</span>
+      <span class="text-slate-400 text-xs">通信環境をご確認のうえ、「更新」ボタンで再度お試しください。</span>
     </td></tr>`;
   }
 }
