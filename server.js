@@ -361,10 +361,11 @@ function parseTideApi(td) {
 }
 
 // moonphase.php → 今日(ymd:YYYYMMDD)の月齢(整数)
+// 海快晴サイトの表示に合わせて切り捨て(例: age 2.72 → 月齢2)
 function parseMoonAge(moon, ymd) {
   if (!moon || !Array.isArray(moon.obs)) return null;
   const hit = moon.obs.find((o) => String(o.dt).slice(0, 8) === ymd) || moon.obs[0];
-  return hit && hit.age != null ? Math.round(parseFloat(hit.age)) : null;
+  return hit && hit.age != null ? Math.floor(parseFloat(hit.age)) : null;
 }
 
 /* ======================================================================

@@ -144,7 +144,7 @@ function renderTide(tide) {
         <div class="text-2xl sm:text-3xl font-extrabold text-slate-900 num">${GEN_DATE.md || '--'}</div>
         <div class="text-xs sm:text-sm font-bold text-ocean-600">(${GEN_DATE.wd || '-'})</div>
       </div>
-      <span class="text-3xl sm:text-4xl">🌕</span>
+      <span class="text-3xl sm:text-4xl">${tide.moonEmoji || '🌙'}</span>
       <div>
         <div class="text-[10px] text-slate-400">今日の潮回り</div>
         <div class="text-xl sm:text-2xl font-bold tracking-wide text-slate-900">${tide.tideName || '<span class=\'text-slate-400 text-base\'>潮名取得不可</span>'}${tide.moonAge!=null?` <span class="text-[11px] text-slate-400 font-normal">月齢${tide.moonAge}</span>`:''}</div>
@@ -270,6 +270,13 @@ const numOr = (v) => { if (v == null) return null; const n = parseFloat(v); retu
 const dirCodeToDeg = (c) => (c == null || c === '') ? null : ((((+c % 16) + 16) % 16) * 22.5); // 0=北
 const umiDtToKey = (dt) => { const s = String(dt); return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}T${s.slice(8,10)}:00`; };
 const jget = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
+// 月齢(0〜29.53)から月相の絵文字を求める
+const MOON_EMOJI = ['🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘'];
+const moonEmojiFromAge = (age) => {
+  if (age == null || isNaN(age)) return '🌙';
+  const p = ((age % 29.53) + 29.53) % 29.53;
+  return MOON_EMOJI[Math.floor((p / 29.53) * 8 + 0.5) % 8];
+};
 
 // 海快晴の公開API (認証不要) から 波/風/潮位/潮汐/月齢 をライブ取得
 async function fetchUmikaiseiLive() {
@@ -315,7 +322,12 @@ async function fetchUmikaiseiLive() {
   }
   if (moon && Array.isArray(moon.obs)) {
     const hit = moon.obs.find((o) => String(o.dt).slice(0, 8) === ymd) || moon.obs[0];
-    if (hit && hit.age != null) out.tide.moonAge = Math.round(parseFloat(hit.age));
+    if (hit && hit.age != null) {
+      const a = parseFloat(hit.age);
+      out.tide.moonAge = Math.floor(a);        // 海快晴の表示に合わせて切り捨て(例 2.72→2)
+      out.tide.moonEmoji = moonEmojiFromAge(a); // 月相に応じた絵文字
+      out.tide.moonLumin = hit.lumin != null ? parseInt(hit.lumin, 10) : null; // 輝面比%
+    }
   }
   return out;
 }
