@@ -105,7 +105,14 @@ function volBar(pct, colorClass) {
   return `<div class="absolute bottom-0 left-0 h-1.5 rounded-r ${colorClass}" style="width:${w}%"></div>`;
 }
 
-// 風セル: 方位＋風速。緑バーで強さを可視化(5m/s以上は琥珀、8m/s以上は赤)
+// 風向きの矢印: 実際の角度で回転させた三角形(風が向かう向きを指す)。絵文字より視認性が高い
+function windArrowHtml(deg, strong) {
+  if (deg == null || isNaN(deg)) return '<span class="text-slate-300">–</span>';
+  const color = strong >= 8 ? 'text-red-600' : strong >= 5 ? 'text-amber-600' : 'text-ocean-600';
+  return `<span class="inline-block ${color} text-lg sm:text-xl leading-none" style="transform:rotate(${(deg + 180) % 360}deg)">▲</span>`;
+}
+
+// 風セル: 風向き矢印＋方位＋風速。下部の細いバーで強さを可視化(5m/s以上は琥珀、8m/s以上は赤)
 function windCell(w, lb) {
   const s = w.windSpeed;
   const pct = s == null ? 0 : (s / 15) * 100;               // 15m/sで満タン
@@ -117,7 +124,8 @@ function windCell(w, lb) {
   return `<td class="relative px-0.5 py-1.5 text-center ${lb||'border-l border-slate-100'}">
     ${volBar(pct, bar)}
     <div class="relative">
-      <div class="text-[9px] text-slate-600 leading-tight">${w.windArrow||''}${w.windDir||'--'}</div>
+      <div class="leading-none">${windArrowHtml(w.windDeg, s)}</div>
+      <div class="text-[10px] text-slate-600 leading-tight">${w.windDir||'--'}</div>
       <div class="text-base sm:text-xl font-bold leading-tight ${s>=8?'text-red-800':s>=5?'text-amber-800':'text-slate-800'}">${fmt(s,1)}</div>
       ${alert}
     </div>
