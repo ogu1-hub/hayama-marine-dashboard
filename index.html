@@ -77,7 +77,7 @@
       <span class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">🟠 風5m/s+</span>
       <span class="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">🔴 8m/s+</span>
       <span class="inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200">☔ 降水1mm/h+</span>
-      <span class="inline-block px-2 py-0.5 rounded bg-yellow-200/70 text-yellow-900 border border-yellow-400">🏄 8:00〜14:00（海に入る時間帯）</span>
+      <span class="inline-block px-2 py-0.5 rounded bg-cyan-100 text-cyan-800 border border-cyan-300">🏄 8:00〜14:00（海に入る時間帯）</span>
     </div>
 タブで表示切替：「基本」＝天気・気温・降水量・降水確率・潮位／「風」＝天気・潮位＋風4モデル(Yahoo・海快晴・ICON・GFS)／「波」＝天気・潮位＋波2モデル(海快晴・OpenMeteo, cm表示)／「波風」＝風4＋波2を一覧。強風はセルの背景色で表示（5m/s以上＝琥珀／8m/s以上＝赤）。潮位＝紫、波＝青のバーは大きさの目安。<b>潮位は満潮(極大)を赤字・干潮(極小)を青字</b>、<b>波は80cm以上を赤字</b>で表示。<b>GFSはWindyアプリ(無料版)と同じモデル</b>なので数値を直接見比べられます。ICON＝独DWD 13km。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。<b>降水確率はOpen-Meteo(日本では気象庁MSM)</b>の時間別値（Yahooは時間別の降水確率をWebで公開していないため）。60%以上は青で強調。<b>Yahoo!天気は時間別を今日・明日の2日分しか公開していない</b>ため、それ以降の天気・気温・降水はOpen-Meteo(日本では気象庁MSM)の時間別で補完しています。
   </footer>
@@ -234,10 +234,10 @@ function renderTable(timeline) {
       divider = `<tr><td colspan="12" class="p-0 bg-ocean-600"><div class="sticky left-0 inline-block px-2.5 py-1 text-white text-xs sm:text-sm font-bold bg-ocean-600">📅 ${dd.getMonth()+1}月${dd.getDate()}日(${wd})</div></td></tr>`;
     }
     const rainWet = (r.yahoo.rainMm != null && r.yahoo.rainMm >= 1);
-    // 海に入る時間帯(8:00〜14:00)は背景を黄色で強調
+    // 海に入る時間帯(8:00〜14:00)は背景を薄い水色で強調(風の注意の黄色と区別)
     const seaTime = r.hour >= 8 && r.hour <= 14;
-    const rowBg = seaTime ? 'bg-yellow-200/70' : (i % 2 ? 'bg-white' : 'bg-slate-50/70');
-    const stickyBg = seaTime ? 'bg-[#fdf0b8]' : (i % 2 ? 'bg-white' : 'bg-[#f5f8fb]');
+    const rowBg = seaTime ? 'bg-cyan-100/70' : (i % 2 ? 'bg-white' : 'bg-slate-50/70');
+    const stickyBg = seaTime ? 'bg-[#d5f2f7]' : (i % 2 ? 'bg-white' : 'bg-[#f5f8fb]');
     const badge = r.tideBadge
       ? `<span class="block text-[8px] mt-0.5 ${/満潮/.test(r.tideBadge)?'text-rose-600':'text-emerald-600'}">${r.tideBadge}</span>`
       : '';
