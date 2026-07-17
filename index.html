@@ -79,7 +79,7 @@
       <span class="inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200">☔ 降水1mm/h+</span>
       <span class="inline-block px-2 py-0.5 rounded bg-cyan-100 text-cyan-800 border border-cyan-300">🏄 8:00〜14:00（海に入る時間帯）</span>
     </div>
-タブで表示切替：「基本」＝天気・気温・降水量・降水確率・潮位／「風」＝天気・潮位＋風4モデル(Yahoo・海快晴・ICON・GFS)／「波」＝天気・潮位＋波2モデル(海快晴・OpenMeteo, cm表示)／「波風」＝風4＋波2を一覧。強風はセルの背景色で表示（5m/s以上＝琥珀／8m/s以上＝赤）。潮位＝紫、波＝青のバーは大きさの目安。<b>潮位は満潮(極大)を赤字・干潮(極小)を青字</b>、<b>波は80cm以上を赤字</b>で表示。<b>GFSはWindyアプリ(無料版)と同じモデル</b>なので数値を直接見比べられます。ICON＝独DWD 13km。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。<b>降水確率はOpen-Meteo(日本では気象庁MSM)</b>の時間別値（Yahooは時間別の降水確率をWebで公開していないため）。60%以上は青で強調。<b>Yahoo!天気は時間別を今日・明日の2日分しか公開していない</b>ため、それ以降の天気・気温・降水はOpen-Meteo(日本では気象庁MSM)の時間別で補完しています。
+タブで表示切替：「基本」＝天気・気温・降水量・潮位／「風」＝天気・潮位＋風4モデル(Yahoo・海快晴・ICON・GFS)／「波」＝天気・潮位＋波2モデル(海快晴・OpenMeteo, cm表示)／「波風」＝風4＋波2を一覧。強風はセルの背景色で表示（5m/s以上＝琥珀／8m/s以上＝赤）。潮位＝紫、波＝青のバーは大きさの目安。<b>潮位は満潮(極大)を赤字・干潮(極小)を青字</b>、<b>波は80cm以上を赤字</b>で表示。<b>GFSはWindyアプリ(無料版)と同じモデル</b>なので数値を直接見比べられます。ICON＝独DWD 13km。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。<b>Yahoo!天気は時間別を今日・明日の2日分しか公開していない</b>ため、それ以降の天気・気温・降水はOpen-Meteo(日本では気象庁MSM)の時間別で補完しています。
   </footer>
 </div>
 
@@ -208,12 +208,11 @@ function renderTable(timeline) {
   const TH_TIME = `<th class="sticky-col bg-slate-100 px-1.5 sm:px-3 py-1 text-left text-[10px] sm:text-xs">時間</th>`;
   const TH_WX   = `<th class="px-1 py-1 text-[10px] sm:text-xs">天気</th>`;
   const TH_TEMP = `<th class="px-1 py-1 text-[10px] sm:text-xs">🌡️気温<span class="block text-[8px] text-slate-400 font-normal">℃</span></th>`;
-  const TH_RAIN = `<th class="px-1 py-1 text-[10px] sm:text-xs">💧降水量<span class="block text-[8px] text-slate-400 font-normal">mm</span></th>`;
-  const TH_POP  = `<th class="px-1 py-1 text-[10px] sm:text-xs">☔降水確率<span class="block text-[8px] text-slate-400 font-normal">%</span></th>`;
+  const TH_RAIN = `<th class="px-1 py-1 text-[10px] sm:text-xs">☔降水量<span class="block text-[8px] text-slate-400 font-normal">mm</span></th>`;
   const TH_TIDE = `<th class="px-1 py-1 text-[10px] sm:text-xs">🌑潮位<span class="block text-[8px] text-slate-400 font-normal">cm</span></th>`;
 
   let head;
-  if (tab === 'basic') head = TH_TIME + TH_WX + TH_TEMP + TH_RAIN + TH_POP + TH_TIDE;
+  if (tab === 'basic') head = TH_TIME + TH_WX + TH_TEMP + TH_RAIN + TH_TIDE;
   else if (tab === 'wind') head = TH_TIME + TH_WX + TH_TIDE + windTh('Yahoo', SEP_L) + windTh('海快晴') + windTh('ICON') + windTh('GFS');
   else if (tab === 'wave') head = TH_TIME + TH_WX + TH_TIDE + waveTh('海快晴', SEP_L) + waveTh('OpenMeteo');
   else head = TH_TIME + windTh('Yahoo', SEP_L) + windTh('海快晴') + windTh('ICON') + windTh('GFS') + waveTh('海快晴', 'border-l-2 border-indigo-300') + waveTh('OpenMeteo');
@@ -258,14 +257,11 @@ function renderTable(timeline) {
       </td>`;
     const tdTemp = `<td class="px-0.5 py-1.5 text-center text-lg sm:text-xl font-bold text-slate-700">${fmt(r.yahoo.temp,0)}</td>`;
     const tdRain = `<td class="px-0.5 py-1.5 text-center text-lg sm:text-xl font-bold ${rainWet?'bg-sky-100 text-sky-700':'text-slate-600'}">${fmt(r.yahoo.rainMm,1)}</td>`;
-    // 降水確率60%以上は背景を薄いブルーで強調
-    const popHigh = (r.yahoo.pop != null && r.yahoo.pop >= 60);
-    const tdPop = `<td class="px-0.5 py-1.5 text-center text-lg sm:text-xl font-bold ${popHigh?'bg-sky-100 text-sky-700':'text-slate-600'}">${fmt(r.yahoo.pop,0)}</td>`;
     const tdTide = tideCellHtml(r);
     const windCells = windCell(r.yahoo, SEP_L) + windCell(r.umikaisei) + windCell(r.windy) + windCell(r.gfs);
 
     let cells;
-    if (tab === 'basic') cells = tdTime + tdWxBig + tdTemp + tdRain + tdPop + tdTide;
+    if (tab === 'basic') cells = tdTime + tdWxBig + tdTemp + tdRain + tdTide;
     else if (tab === 'wind') cells = tdTime + tdWxSmall + tdTide + windCells;
     else if (tab === 'wave') cells = tdTime + tdWxSmall + tdTide + umiWaveCell(r, SEP_L) + windyWaveCell(r);
     else cells = tdTime + windCells + umiWaveCell(r, 'border-l-2 border-indigo-300') + windyWaveCell(r);
