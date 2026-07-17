@@ -49,16 +49,12 @@
   <!-- ソース状態 -->
   <div id="sourceStatus" class="flex flex-wrap gap-1.5 mb-2 text-[10px]"></div>
 
-  <!-- 比較タブ + スクロールヒント -->
-  <div class="flex items-center justify-between gap-2 mb-1.5">
-    <span class="sm:hidden text-[10px] text-slate-400 flex items-center gap-1 pl-1">
-      <span class="animate-pulse">→</span> 右側で比較
-    </span>
-    <span class="hidden sm:block text-xs text-slate-400">右側の比較項目を切替 ▶</span>
-    <div class="inline-flex rounded-xl bg-slate-200 p-0.5 shrink-0">
-      <button data-tab="wind" class="tab-btn px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition">🌬️風</button>
-      <button data-tab="wave" class="tab-btn px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition">🌊波</button>
-      <button data-tab="both" class="tab-btn px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition">🌊🌬️波風</button>
+  <!-- 表示切替タブ -->
+  <div class="mb-2">
+    <div class="grid grid-cols-3 gap-1.5 rounded-2xl bg-slate-200 p-1.5">
+      <button data-tab="basic" class="tab-btn py-3 rounded-xl text-base sm:text-lg font-bold transition">📋 基本</button>
+      <button data-tab="wind" class="tab-btn py-3 rounded-xl text-base sm:text-lg font-bold transition">🌬️ 風</button>
+      <button data-tab="wave" class="tab-btn py-3 rounded-xl text-base sm:text-lg font-bold transition">🌊 波</button>
     </div>
   </div>
 
@@ -81,14 +77,14 @@
       <span class="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">🔴 8m/s+</span>
       <span class="inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200">☔ 降水1mm/h+</span>
     </div>
-左の固定列(天気・気温・降水量・潮位)＝Yahoo!天気＋海快晴。右の比較はタブで「風／波／波風」を切替（波風タブは気温・降水・潮位を省き風波を一覧）。風の比較列＝Yahoo/海快晴/ICON(独DWD 13km 葉山沿岸)/ECMWF(欧州 全球25km/Windy定番)。波の比較列＝海快晴/Open-Meteo Marine。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。
+タブで表示切替：「基本」＝天気・気温・降水量・潮位／「風」＝天気・潮位＋風4モデル(Yahoo・海快晴・ICON・GFS)／「波」＝天気・潮位＋波2モデル(海快晴・OpenMeteo)。バーの長さが強さの目安（風＝緑／5m/s以上は琥珀／8m/s以上は赤、潮位＝紫、波＝青）。<b>GFSはWindyアプリ(無料版)と同じモデル</b>なので数値を直接見比べられます。ICON＝独DWD 13km。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。
   </footer>
 </div>
 
 <script>
 const $ = (s, el=document) => el.querySelector(s);
 let DATA = null;
-let activeTab = 'wind';
+let activeTab = 'basic';
 let GEN_DATE = { md: '', wd: '' }; // 取得日(簡易: M/D, 曜日)
 
 function windCellClass(speed) {
@@ -102,30 +98,58 @@ function fmt(v, digits=0, suffix='') {
   return (digits ? Number(v).toFixed(digits) : Math.round(v)) + suffix;
 }
 
-// 風セル (方位を小さく / 風速を大きく単位なし / 地形アラート)。lb=左境界線クラス
+// 値の大きさを背景バーで表現(海快晴の表示に倣う)。pct=0〜100
+function volBar(pct, colorClass) {
+  const w = Math.max(0, Math.min(100, pct || 0));
+  return `<div class="absolute inset-y-0.5 left-0 rounded-r ${colorClass}" style="width:${w}%"></div>`;
+}
+
+// 風セル: 方位＋風速。緑バーで強さを可視化(5m/s以上は琥珀、8m/s以上は赤)
 function windCell(w, lb) {
-  const cls = windCellClass(w.windSpeed);
+  const s = w.windSpeed;
+  const pct = s == null ? 0 : (s / 15) * 100;               // 15m/sで満タン
+  const bar = s >= 8 ? 'bg-red-300/70' : s >= 5 ? 'bg-amber-300/70' : 'bg-emerald-300/60';
   const onshore = /オンショア/.test(w.windAlert);
   const alert = w.windAlert
-    ? `<div class="text-[8px] leading-none whitespace-normal break-all ${onshore?'text-red-600':'text-sky-600'}">${onshore?'面荒れ':'沖出し'}</div>`
+    ? `<div class="text-[8px] leading-none whitespace-normal break-all ${onshore?'text-red-700':'text-sky-700'}">${onshore?'面荒れ':'沖出し'}</div>`
     : '';
-  return `<td class="px-0.5 py-1.5 text-center ${lb||'border-l border-slate-100'} ${cls}">
-    <div class="text-[9px] text-slate-500 leading-tight">${w.windDir||'--'}</div>
-    <div class="text-base sm:text-xl font-bold leading-tight ${w.windSpeed>=8?'text-red-700':w.windSpeed>=5?'text-amber-700':'text-slate-700'}">${fmt(w.windSpeed,1)}</div>
-    ${alert}
+  return `<td class="relative px-0.5 py-1.5 text-center ${lb||'border-l border-slate-100'}">
+    ${volBar(pct, bar)}
+    <div class="relative">
+      <div class="text-[9px] text-slate-600 leading-tight">${w.windArrow||''}${w.windDir||'--'}</div>
+      <div class="text-base sm:text-xl font-bold leading-tight ${s>=8?'text-red-800':s>=5?'text-amber-800':'text-slate-800'}">${fmt(s,1)}</div>
+      ${alert}
+    </div>
   </td>`;
 }
 
-// 波セル (波高を大きく単位なし)。lb=左境界線クラス
+// 波セル: 波高。青バーで大きさを可視化
 function waveCell(wave, fromFallback, color, lb) {
-  return `<td class="px-1 py-1.5 text-center ${lb||'border-l border-slate-100'}">
-    <span class="text-lg sm:text-xl font-bold ${color}">${fmt(wave,1)}</span>
-    ${fromFallback?'<span class="block text-[8px] text-slate-400 leading-none">推定</span>':''}
+  const pct = wave == null ? 0 : (wave / 2) * 100;          // 2mで満タン
+  return `<td class="relative px-1 py-1.5 text-center ${lb||'border-l border-slate-100'}">
+    ${volBar(pct, 'bg-sky-300/60')}
+    <div class="relative">
+      <span class="text-lg sm:text-xl font-bold ${color}">${fmt(wave,1)}</span>
+      ${fromFallback?'<span class="block text-[8px] text-slate-500 leading-none">推定</span>':''}
+    </div>
   </td>`;
 }
-// 波セルのソース別ラッパ
-function umiWaveCell(r, lb) { return waveCell(r.umikaisei.wave, r.umikaisei.waveFromFallback, r.umikaisei.waveFromFallback?'text-slate-500':'text-emerald-600', lb); }
-function windyWaveCell(r, lb) { return waveCell(r.windy.wave, false, 'text-indigo-600', lb); }
+function umiWaveCell(r, lb) { return waveCell(r.umikaisei.wave, r.umikaisei.waveFromFallback, r.umikaisei.waveFromFallback?'text-slate-500':'text-emerald-700', lb); }
+function windyWaveCell(r, lb) { return waveCell(r.windy.wave, false, 'text-indigo-700', lb); }
+
+// 潮位セル: 紫バーで潮位の高さを可視化
+function tideCellHtml(r) {
+  const t = r.umikaisei.tide;
+  if (t == null) return `<td class="px-0.5 py-1.5 text-center"><span class="text-slate-300">--</span></td>`;
+  const pct = (t / 180) * 100;                              // 180cmで満タン
+  const arrow = r.umikaisei.tideTrend === 'up' ? '📈' : r.umikaisei.tideTrend === 'down' ? '📉' : '';
+  return `<td class="relative px-0.5 py-1.5 text-center">
+    ${volBar(pct, 'bg-violet-300/60')}
+    <div class="relative">
+      <span class="text-lg sm:text-xl font-bold num text-slate-800 leading-none">${t}</span><span class="text-[11px] ml-0.5">${arrow}</span>
+    </div>
+  </td>`;
+}
 
 function chip(ok, label) {
   const c = ok ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
@@ -157,30 +181,29 @@ function renderTide(tide) {
 }
 
 const SEP_L = 'border-l-2 border-ocean-300';   // 比較グループ先頭の太線
-const SEP_WAVE = 'border-l-2 border-indigo-300'; // 波風タブで波グループの区切り
 
+/* タブ構成
+ *  basic … 時間 / 天気 / 気温 / 降水量 / 潮位
+ *  wind  … 時間 / 天気(気温付) / 潮位 / 風×4 (Yahoo・海快晴・ICON・GFS)
+ *  wave  … 時間 / 天気(気温付) / 潮位 / 波×2 (海快晴・OpenMeteo)
+ */
 function renderTable(timeline) {
   const thead = $('#thead');
-  const isBoth = activeTab === 'both';
+  const tab = activeTab;
   const windTh = (src, lb) => `<th class="px-0.5 py-1 bg-sky-50 ${lb||''}"><div class="text-[11px] sm:text-xs text-ocean-700 font-bold">${src}</div><div class="text-[8px] text-slate-400 font-normal">風 m/s</div></th>`;
   const waveTh = (src, lb) => `<th class="px-1 py-1 bg-indigo-50 ${lb||''}"><div class="text-[11px] sm:text-xs text-indigo-700 font-bold">${src}</div><div class="text-[8px] text-slate-400 font-normal">波 m</div></th>`;
+  const TH_TIME = `<th class="sticky-col bg-slate-100 px-1.5 sm:px-3 py-1 text-left text-[10px] sm:text-xs">時間</th>`;
+  const TH_WX   = `<th class="px-1 py-1 text-[10px] sm:text-xs">天気</th>`;
+  const TH_TEMP = `<th class="px-1 py-1 text-[10px] sm:text-xs">🌡️気温<span class="block text-[8px] text-slate-400 font-normal">℃</span></th>`;
+  const TH_RAIN = `<th class="px-1 py-1 text-[10px] sm:text-xs">☔降水<span class="block text-[8px] text-slate-400 font-normal">mm</span></th>`;
+  const TH_TIDE = `<th class="px-1 py-1 text-[10px] sm:text-xs">🌑潮位<span class="block text-[8px] text-slate-400 font-normal">cm</span></th>`;
 
-  // 固定列ヘッダ (波風タブは 時間+天気 のみ)
-  let fixedHead = `
-      <th class="sticky-col bg-slate-100 px-1.5 sm:px-3 py-1 text-left text-[10px] sm:text-xs">時間</th>
-      <th class="px-1 py-1 text-[10px] sm:text-xs">天気</th>`;
-  if (!isBoth) fixedHead += `
-      <th class="px-1 py-1 text-[10px] sm:text-xs">🌡️気温<span class="block text-[8px] text-slate-400 font-normal">℃</span></th>
-      <th class="px-1 py-1 text-[10px] sm:text-xs">☔降水<span class="block text-[8px] text-slate-400 font-normal">mm</span></th>
-      <th class="px-1 py-1 text-[10px] sm:text-xs">🌑潮位<span class="block text-[8px] text-slate-400 font-normal">cm</span></th>`;
+  let head;
+  if (tab === 'basic') head = TH_TIME + TH_WX + TH_TEMP + TH_RAIN + TH_TIDE;
+  else if (tab === 'wind') head = TH_TIME + TH_WX + TH_TIDE + windTh('Yahoo', SEP_L) + windTh('海快晴') + windTh('ICON') + windTh('GFS');
+  else head = TH_TIME + TH_WX + TH_TIDE + waveTh('海快晴', SEP_L) + waveTh('OpenMeteo');
 
-  // 比較列ヘッダ
-  let tabHead;
-  if (activeTab === 'wind') tabHead = windTh('Yahoo', SEP_L) + windTh('海快晴') + windTh('ICON') + windTh('ECMWF');
-  else if (activeTab === 'wave') tabHead = waveTh('海快晴', SEP_L) + waveTh('OpenMeteo');
-  else tabHead = windTh('Yahoo', SEP_L) + windTh('海快晴') + windTh('ICON') + windTh('ECMWF') + waveTh('海快晴', SEP_WAVE) + waveTh('OpenMeteo');
-
-  thead.innerHTML = `<tr class="bg-slate-100 text-slate-500 border-b border-slate-200">${fixedHead}${tabHead}</tr>`;
+  thead.innerHTML = `<tr class="bg-slate-100 text-slate-500 border-b border-slate-200">${head}</tr>`;
 
   const tbody = $('#tbody');
   let prevDate = null;
@@ -202,46 +225,30 @@ function renderTable(timeline) {
       ? `<span class="block text-[8px] mt-0.5 ${/満潮/.test(r.tideBadge)?'text-rose-600':'text-emerald-600'}">${r.tideBadge}</span>`
       : '';
 
-    // 固定列セル
-    let fixed = `
-      <td class="sticky-col ${stickyBg} px-1.5 sm:px-3 py-1.5 font-bold text-sm text-slate-700">
-        ${r.label}
-        ${badge}
-      </td>
-      <td class="px-0.5 py-1.5 text-center border-l border-slate-100">
+    const tdTime = `<td class="sticky-col ${stickyBg} px-1.5 sm:px-3 py-1.5 font-bold text-sm text-slate-700">${r.label}${badge}</td>`;
+    // 風/波タブは気温列が無いので、天気の下に気温を添える
+    const tdWx = `<td class="px-0.5 py-1.5 text-center border-l border-slate-100">
         <div class="text-lg leading-none">${r.yahoo.icon||''}</div>
         <div class="text-[8px] text-slate-400 leading-tight">${r.yahoo.desc||''}</div>
-        ${isBoth ? `<div class="text-sm font-bold text-slate-700 leading-none mt-0.5">${fmt(r.yahoo.temp,0)}°</div>` : ''}
+        ${tab !== 'basic' ? `<div class="text-sm font-bold text-slate-700 leading-none mt-0.5">${fmt(r.yahoo.temp,0)}°</div>` : ''}
       </td>`;
-    if (!isBoth) {
-      let tideCell = '<span class="text-slate-300">--</span>';
-      if (r.umikaisei.tide != null) {
-        const arrow = r.umikaisei.tideTrend === 'up' ? '📈'
-                    : r.umikaisei.tideTrend === 'down' ? '📉' : '';
-        tideCell = `<span class="text-lg sm:text-xl font-bold num text-slate-700 leading-none">${r.umikaisei.tide}</span><span class="text-[11px] ml-0.5">${arrow}</span>`;
-      }
-      fixed += `
-      <td class="px-0.5 py-1.5 text-center text-lg sm:text-xl font-bold text-slate-700">${fmt(r.yahoo.temp,0)}</td>
-      <td class="px-0.5 py-1.5 text-center text-lg sm:text-xl font-bold ${rainWet?'bg-sky-100 text-sky-700':'text-slate-600'}">${fmt(r.yahoo.rainMm,1)}</td>
-      <td class="px-0.5 py-1.5 text-center">${tideCell}</td>`;
-    }
+    const tdTemp = `<td class="px-0.5 py-1.5 text-center text-lg sm:text-xl font-bold text-slate-700">${fmt(r.yahoo.temp,0)}</td>`;
+    const tdRain = `<td class="px-0.5 py-1.5 text-center text-lg sm:text-xl font-bold ${rainWet?'bg-sky-100 text-sky-700':'text-slate-600'}">${fmt(r.yahoo.rainMm,1)}</td>`;
+    const tdTide = tideCellHtml(r);
 
-    // 比較列セル
-    let tabCells;
-    if (activeTab === 'wind') tabCells = windCell(r.yahoo, SEP_L) + windCell(r.umikaisei) + windCell(r.windy) + windCell(r.ecmwf);
-    else if (activeTab === 'wave') tabCells = umiWaveCell(r, SEP_L) + windyWaveCell(r);
-    else tabCells = windCell(r.yahoo, SEP_L) + windCell(r.umikaisei) + windCell(r.windy) + windCell(r.ecmwf) + umiWaveCell(r, SEP_WAVE) + windyWaveCell(r);
+    let cells;
+    if (tab === 'basic') cells = tdTime + tdWx + tdTemp + tdRain + tdTide;
+    else if (tab === 'wind') cells = tdTime + tdWx + tdTide + windCell(r.yahoo, SEP_L) + windCell(r.umikaisei) + windCell(r.windy) + windCell(r.gfs);
+    else cells = tdTime + tdWx + tdTide + umiWaveCell(r, SEP_L) + windyWaveCell(r);
 
-    return `${divider}<tr class="${rowBg} ${nightCls} border-t border-slate-100 active:bg-sky-50">${fixed}${tabCells}</tr>`;
+    return `${divider}<tr class="${rowBg} ${nightCls} border-t border-slate-100 active:bg-sky-50">${cells}</tr>`;
   }).join('');
 }
 
 function syncTabButtons() {
   document.querySelectorAll('.tab-btn').forEach(b => {
-    if (b.dataset.tab === activeTab) b.className = b.className.replace(/(bg-\S+|text-\S+)/g,'') + ' bg-white text-ocean-700 shadow-sm';
-    else b.className = b.className.replace(/(bg-white|text-ocean-700|shadow-sm)/g,'') + ' text-slate-500';
-    b.className = 'tab-btn px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ' +
-      (b.dataset.tab === activeTab ? 'bg-white text-ocean-700 shadow-sm' : 'text-slate-500');
+    b.className = 'tab-btn py-3 rounded-xl text-base sm:text-lg font-bold transition ' +
+      (b.dataset.tab === activeTab ? 'bg-white text-ocean-700 shadow' : 'text-slate-500 active:bg-slate-100');
   });
 }
 
@@ -345,15 +352,16 @@ async function fetchOpenMeteoLive() {
     });
   };
   const base = `latitude=${LAT}&longitude=${LON}&forecast_days=${FCST_DAYS}&timezone=Asia%2FTokyo`;
-  const [marine, icon, ecmwf, pop] = await Promise.all([
+  // GFS = Windyアプリ(無料版/低精度モード)と同じモデル。実測で平均誤差0.24m/sと一致。
+  const [marine, icon, gfs, pop] = await Promise.all([
     jget(`https://marine-api.open-meteo.com/v1/marine?${base}&hourly=wave_height,wave_direction,wave_period`).catch(() => null),
     jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=icon_seamless&wind_speed_unit=ms`).catch(() => null),
-    jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=ecmwf_ifs025&wind_speed_unit=ms`).catch(() => null),
+    jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=gfs_seamless&wind_speed_unit=ms`).catch(() => null),
     jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=precipitation_probability`).catch(() => null),
   ]);
   setH(marine, [['wave_height','wave'], ['wave_direction','waveDeg'], ['wave_period','wavePeriod']]);
   setH(icon, [['wind_speed_10m','windSpeed'], ['wind_direction_10m','windDeg']]);
-  setH(ecmwf, [['wind_speed_10m','windSpeedE'], ['wind_direction_10m','windDegE']]);
+  setH(gfs, [['wind_speed_10m','windSpeedG'], ['wind_direction_10m','windDegG']]);
   setH(pop, [['precipitation_probability','pop']]);
   return res;
 }
@@ -398,10 +406,10 @@ function buildTimelineClient(om, umi, yahooByKey) {
         windDeg: o.windDeg ?? null, windArrow: degToArrow(o.windDeg), windSpeed: o.windSpeed ?? null,
         windAlert: o.windSpeed >= 5 ? localWindAlert(o.windDeg) : '',
       },
-      ecmwf: {
-        windDir: o.windDegE != null ? degToJpDir(o.windDegE) : '--', windDeg: o.windDegE ?? null,
-        windArrow: degToArrow(o.windDegE), windSpeed: o.windSpeedE ?? null,
-        windAlert: o.windSpeedE >= 5 ? localWindAlert(o.windDegE) : '',
+      gfs: {
+        windDir: o.windDegG != null ? degToJpDir(o.windDegG) : '--', windDeg: o.windDegG ?? null,
+        windArrow: degToArrow(o.windDegG), windSpeed: o.windSpeedG ?? null,
+        windAlert: o.windSpeedG >= 5 ? localWindAlert(o.windDegG) : '',
       },
     });
   }

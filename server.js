@@ -124,14 +124,15 @@ async function fetchOpenMeteo() {
     models: model,
     forecast_days: FORECAST_DAYS, timezone: 'Asia/Tokyo', wind_speed_unit: 'ms',
   });
-  const [marine, wind, ecmwf, pop] = await Promise.all([
+  const [marine, wind, gfs, pop] = await Promise.all([
     getWithRetry('https://marine-api.open-meteo.com/v1/marine', {
       latitude: HAYAMA_LAT, longitude: HAYAMA_LON,
       hourly: 'wave_height,wave_direction,wave_period',
       forecast_days: FORECAST_DAYS, timezone: 'Asia/Tokyo',
     }, 'Marine(波)'),
     getWithRetry('https://api.open-meteo.com/v1/forecast', windParams(WINDY_WIND_MODEL), `風(${WINDY_WIND_MODEL})`),
-    getWithRetry('https://api.open-meteo.com/v1/forecast', windParams('ecmwf_ifs025'), '風(ecmwf_ifs025)'),
+    // GFS = Windyアプリ(無料版/低精度モード)と同じモデル
+    getWithRetry('https://api.open-meteo.com/v1/forecast', windParams('gfs_seamless'), '風(gfs_seamless)'),
     getWithRetry('https://api.open-meteo.com/v1/forecast', {
       latitude: HAYAMA_LAT, longitude: HAYAMA_LON,
       hourly: 'precipitation_probability',
@@ -142,11 +143,11 @@ async function fetchOpenMeteo() {
   // 各モデルが実際にスナップした座標をログ(葉山=35.27/139.58 に近いか確認用)
   if (marine) console.log(`[OpenMeteo] Marine座標 ${marine.latitude}/${marine.longitude} (標高${marine.elevation}m)`);
   if (wind) console.log(`[OpenMeteo] 風(${WINDY_WIND_MODEL})座標 ${wind.latitude}/${wind.longitude} (標高${wind.elevation}m)`);
-  if (ecmwf) console.log(`[OpenMeteo] 風(ECMWF)座標 ${ecmwf.latitude}/${ecmwf.longitude} (標高${ecmwf.elevation}m)`);
+  if (gfs) console.log(`[OpenMeteo] 風(GFS)座標 ${gfs.latitude}/${gfs.longitude} (標高${gfs.elevation}m)`);
 
   setH(marine, [['wave_height', 'wave'], ['wave_direction', 'waveDeg'], ['wave_period', 'wavePeriod']]);
   setH(wind, [['wind_speed_10m', 'windSpeed'], ['wind_direction_10m', 'windDeg']]);
-  setH(ecmwf, [['wind_speed_10m', 'windSpeedE'], ['wind_direction_10m', 'windDegE']]);
+  setH(gfs, [['wind_speed_10m', 'windSpeedG'], ['wind_direction_10m', 'windDegG']]);
   setH(pop, [['precipitation_probability', 'pop']]);
 
   return result;
@@ -448,12 +449,12 @@ function buildTimeline({ openMeteo, yahoo, umikaisei }) {
         windSpeed: om.windSpeed ?? null,
         windAlert: om.windSpeed >= 5 ? localWindAlert(om.windDeg) : '',
       },
-      ecmwf: {
-        windDir: om.windDegE != null ? degToJpDir(om.windDegE) : '--',
-        windDeg: om.windDegE ?? null,
-        windArrow: degToArrow(om.windDegE),
-        windSpeed: om.windSpeedE ?? null,
-        windAlert: om.windSpeedE >= 5 ? localWindAlert(om.windDegE) : '',
+      gfs: {
+        windDir: om.windDegG != null ? degToJpDir(om.windDegG) : '--',
+        windDeg: om.windDegG ?? null,
+        windArrow: degToArrow(om.windDegG),
+        windSpeed: om.windSpeedG ?? null,
+        windAlert: om.windSpeedG >= 5 ? localWindAlert(om.windDegG) : '',
       },
     });
   }
