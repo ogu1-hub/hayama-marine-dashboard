@@ -51,11 +51,11 @@
 
   <!-- 表示切替タブ -->
   <div class="mb-2">
-    <div class="grid grid-cols-4 gap-1 rounded-2xl bg-slate-200 p-1.5">
-      <button data-tab="basic" class="tab-btn py-3 rounded-xl text-base sm:text-lg font-bold transition">📋 基本</button>
-      <button data-tab="wind" class="tab-btn py-3 rounded-xl text-base sm:text-lg font-bold transition">🌬️ 風</button>
-      <button data-tab="wave" class="tab-btn py-3 rounded-xl text-base sm:text-lg font-bold transition">🌊 波</button>
-      <button data-tab="both" class="tab-btn py-3 rounded-xl text-base sm:text-lg font-bold transition">波風</button>
+    <div class="grid grid-cols-4 gap-1.5">
+      <button data-tab="basic" class="tab-btn">📋 基本</button>
+      <button data-tab="wind" class="tab-btn">🌬️ 風</button>
+      <button data-tab="wave" class="tab-btn">🌊 波</button>
+      <button data-tab="both" class="tab-btn">波風</button>
     </div>
   </div>
 
@@ -78,7 +78,7 @@
       <span class="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">🔴 8m/s+</span>
       <span class="inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200">☔ 降水1mm/h+</span>
     </div>
-タブで表示切替：「基本」＝天気・気温・降水量・潮位／「風」＝天気・潮位＋風4モデル(Yahoo・海快晴・ICON・GFS)／「波」＝天気・潮位＋波2モデル(海快晴・OpenMeteo)／「波風」＝風4＋波2を一覧。バーの長さが強さの目安（風＝緑／5m/s以上は琥珀／8m/s以上は赤、潮位＝紫、波＝青）。<b>GFSはWindyアプリ(無料版)と同じモデル</b>なので数値を直接見比べられます。ICON＝独DWD 13km。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。<b>Yahoo!天気は時間別を今日・明日の2日分しか公開していない</b>ため、それ以降の天気・気温・降水はOpen-Meteo(日本では気象庁MSM)の時間別で補完しています。
+タブで表示切替：「基本」＝天気・気温・降水量・潮位／「風」＝天気・潮位＋風4モデル(Yahoo・海快晴・ICON・GFS)／「波」＝天気・潮位＋波2モデル(海快晴・OpenMeteo)／「波風」＝風4＋波2を一覧。強風はセルの背景色で表示（5m/s以上＝琥珀／8m/s以上＝赤）。潮位＝紫、波＝青のバーは大きさの目安。<b>GFSはWindyアプリ(無料版)と同じモデル</b>なので数値を直接見比べられます。ICON＝独DWD 13km。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。<b>Yahoo!天気は時間別を今日・明日の2日分しか公開していない</b>ため、それ以降の天気・気温・降水はOpen-Meteo(日本では気象庁MSM)の時間別で補完しています。
   </footer>
 </div>
 
@@ -112,22 +112,19 @@ function windArrowHtml(deg, strong) {
   return `<span class="inline-block ${color} text-[10px] leading-none align-middle" style="transform:rotate(${(deg + 180) % 360}deg)">▲</span>`;
 }
 
-// 風セル: 風向き矢印＋方位＋風速。下部の細いバーで強さを可視化(5m/s以上は琥珀、8m/s以上は赤)
+// 風セル: 風向き矢印＋方位＋風速。バーは使わず、強風はセルの背景色で示す。
+// align-top で4列の方位・風速が横一列に揃う(行の高さが違っても中央揃えでズレない)
 function windCell(w, lb) {
   const s = w.windSpeed;
-  const pct = s == null ? 0 : (s / 15) * 100;               // 15m/sで満タン
-  const bar = s >= 8 ? 'bg-red-300/70' : s >= 5 ? 'bg-amber-300/70' : 'bg-emerald-300/60';
+  const tint = s >= 8 ? 'bg-red-50' : s >= 5 ? 'bg-amber-50' : '';
   const onshore = /オンショア/.test(w.windAlert);
   const alert = w.windAlert
     ? `<div class="text-[8px] leading-none whitespace-normal break-all ${onshore?'text-red-700':'text-sky-700'}">${onshore?'面荒れ':'沖出し'}</div>`
     : '';
-  return `<td class="relative px-0.5 py-1.5 text-center ${lb||'border-l border-slate-100'}">
-    ${volBar(pct, bar)}
-    <div class="relative">
-      <div class="text-sm sm:text-base font-bold text-slate-700 leading-tight">${windArrowHtml(w.windDeg, s)}${w.windDir||'--'}</div>
-      <div class="text-base sm:text-xl font-bold leading-tight ${s>=8?'text-red-800':s>=5?'text-amber-800':'text-slate-800'}">${fmt(s,1)}</div>
-      ${alert}
-    </div>
+  return `<td class="px-0.5 py-1.5 text-center align-top ${lb||'border-l border-slate-100'} ${tint}">
+    <div class="text-sm sm:text-base font-bold text-slate-700 leading-tight">${windArrowHtml(w.windDeg, s)}${w.windDir||'--'}</div>
+    <div class="text-base sm:text-xl font-bold leading-tight ${s>=8?'text-red-800':s>=5?'text-amber-800':'text-slate-800'}">${fmt(s,1)}</div>
+    ${alert}
   </td>`;
 }
 
@@ -264,10 +261,19 @@ function renderTable(timeline) {
   }).join('');
 }
 
+// タブごとに色分け(選択中=濃色/白文字, 非選択=淡色)
+const TAB_COLORS = {
+  basic: { on: 'bg-slate-600 text-white border-slate-600', off: 'bg-slate-100 text-slate-600 border-slate-300' },
+  wind:  { on: 'bg-emerald-600 text-white border-emerald-600', off: 'bg-emerald-50 text-emerald-700 border-emerald-300' },
+  wave:  { on: 'bg-sky-600 text-white border-sky-600', off: 'bg-sky-50 text-sky-700 border-sky-300' },
+  both:  { on: 'bg-violet-600 text-white border-violet-600', off: 'bg-violet-50 text-violet-700 border-violet-300' },
+};
 function syncTabButtons() {
   document.querySelectorAll('.tab-btn').forEach(b => {
-    b.className = 'tab-btn py-3 rounded-xl text-base sm:text-lg font-bold transition ' +
-      (b.dataset.tab === activeTab ? 'bg-white text-ocean-700 shadow' : 'text-slate-500 active:bg-slate-100');
+    const c = TAB_COLORS[b.dataset.tab] || TAB_COLORS.basic;
+    const on = b.dataset.tab === activeTab;
+    b.className = 'tab-btn py-3 rounded-xl text-base sm:text-lg font-bold border-2 transition ' +
+      (on ? c.on + ' shadow' : c.off);
   });
 }
 
