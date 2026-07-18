@@ -79,7 +79,7 @@
       <span class="inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200">☔ 降水1mm/h+</span>
       <span class="inline-block px-2 py-0.5 rounded bg-cyan-100 text-cyan-800 border border-cyan-300">🏄 8:00〜14:00（海に入る時間帯）</span>
     </div>
-タブで表示切替：「基本」＝天気・気温・降水量・潮位／「風」＝天気・潮位＋風4モデル(Yahoo・海快晴・ICON・GFS)／「波」＝天気・潮位＋波2モデル(海快晴・OpenMeteo, cm表示)／「波風」＝風4＋波2を一覧。強風はセルの背景色で表示（5m/s以上＝琥珀／8m/s以上＝赤）。潮位＝紫、波＝青のバーは大きさの目安。<b>潮位は満潮(極大)を赤字・干潮(極小)を青字</b>、<b>波は80cm以上を赤字</b>で表示。<b>GFSはWindyアプリ(無料版)と同じモデル</b>なので数値を直接見比べられます。ICON＝独DWD 13km。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。<b>Yahoo!天気は時間別を今日・明日の2日分しか公開していない</b>ため、それ以降の天気・気温・降水はOpen-Meteo(日本では気象庁MSM)の時間別で補完しています。
+タブで表示切替：「基本」＝天気・気温・降水量・潮位／「風」＝天気・潮位＋風4モデル(Yahoo・海快晴・ICON・GFS)／「波」＝天気・潮位＋波2モデル(海快晴・OpenMeteo)／「波風」＝風4＋波2を一覧。強風はセルの背景色で表示（5m/s以上＝琥珀／8m/s以上＝赤）。潮位＝紫、波＝青のバーは大きさの目安。<b>潮位は満潮(極大)を赤字・干潮(極小)を青字</b>、<b>波は0.8m以上を赤字</b>で表示（波高は海快晴に合わせ0.1m刻み）。<b>GFSはWindyアプリ(無料版)と同じモデル</b>なので数値を直接見比べられます。ICON＝独DWD 13km。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。<b>Yahoo!天気は時間別を今日・明日の2日分しか公開していない</b>ため、それ以降の天気・気温・降水はOpen-Meteo(日本では気象庁MSM)の時間別で補完しています。
   </footer>
 </div>
 
@@ -130,16 +130,16 @@ function windCell(w, lb) {
   </td>`;
 }
 
-// 波セル: 波高をcm表示。80cm以上は赤字。青バーで大きさを可視化
+// 波セル: 波高をメートル表示(海快晴に合わせ0.1m刻みに丸める)。0.8m以上は赤字。青バーで大きさを可視化
 function waveCell(wave, fromFallback, color, lb) {
-  const cm = wave == null ? null : Math.round(wave * 100);  // m → cm
-  const pct = cm == null ? 0 : (cm / 200) * 100;            // 200cmで満タン
-  const big = cm != null && cm >= 80;
+  const m = wave == null ? null : Math.round(wave * 10) / 10;  // 0.1m刻みに丸め
+  const pct = m == null ? 0 : (m / 2) * 100;                   // 2mで満タン
+  const big = m != null && m >= 0.8;
   const cls = big ? 'text-red-600' : color;
   return `<td class="relative px-1 py-1.5 text-center ${lb||'border-l border-slate-100'}">
     ${volBar(pct, 'bg-sky-300/60')}
     <div class="relative">
-      <span class="text-lg sm:text-xl font-bold ${cls}">${cm == null ? '<span class="text-slate-300">--</span>' : cm}</span>
+      <span class="text-lg sm:text-xl font-bold ${cls}">${m == null ? '<span class="text-slate-300">--</span>' : m.toFixed(1)}</span>
       ${fromFallback?'<span class="block text-[8px] text-slate-500 leading-none">推定</span>':''}
     </div>
   </td>`;
@@ -204,7 +204,7 @@ function renderTable(timeline) {
   const thead = $('#thead');
   const tab = activeTab;
   const windTh = (src, lb) => `<th class="px-0.5 py-1 bg-sky-50 ${lb||''}"><div class="text-[11px] sm:text-xs text-ocean-700 font-bold">${src}</div><div class="text-[8px] text-slate-400 font-normal">風 m/s</div></th>`;
-  const waveTh = (src, lb) => `<th class="px-1 py-1 bg-indigo-50 ${lb||''}"><div class="text-[11px] sm:text-xs text-indigo-700 font-bold">${src}</div><div class="text-[8px] text-slate-400 font-normal">波 cm</div></th>`;
+  const waveTh = (src, lb) => `<th class="px-1 py-1 bg-indigo-50 ${lb||''}"><div class="text-[11px] sm:text-xs text-indigo-700 font-bold">${src}</div><div class="text-[8px] text-slate-400 font-normal">波 m</div></th>`;
   const TH_TIME = `<th class="sticky-col bg-slate-100 px-1.5 sm:px-3 py-1 text-left text-[10px] sm:text-xs">時間</th>`;
   const TH_WX   = `<th class="px-1 py-1 text-[10px] sm:text-xs">天気</th>`;
   const TH_TEMP = `<th class="px-1 py-1 text-[10px] sm:text-xs">🌡️気温<span class="block text-[8px] text-slate-400 font-normal">℃</span></th>`;
@@ -359,6 +359,7 @@ async function fetchUmikaiseiLive() {
   if (comb && Array.isArray(comb.datadates)) {
     const ordered = [];
     for (const d of comb.datadates) {
+      if (!String(d.dt).endsWith('0000')) continue; // 稀に混ざる30分値(例 ...091000)は毎時に丸めると衝突するので除外
       const key = umiDtToKey(d.dt);
       const pick = (id) => ((d.foredata || []).find((f) => f.dataid === id) || {}).contents || {};
       const wrf = pick('WRFR01'), swan = pick('SWANR01');

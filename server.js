@@ -304,6 +304,7 @@ async function fetchUmikaisei() {
     if (comb && Array.isArray(comb.datadates)) {
       const ordered = [];
       for (const d of comb.datadates) {
+        if (!String(d.dt).endsWith('0000')) continue; // 稀に混ざる30分値は毎時に丸めると衝突するので除外
         const key = umiDtToKey(d.dt);
         const pick = (id) => ((d.foredata || []).find((f) => f.dataid === id) || {}).contents || {};
         const wrf = pick('WRFR01');
