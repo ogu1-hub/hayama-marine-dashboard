@@ -38,8 +38,16 @@
       <button id="reloadBtn" class="shrink-0 px-3 py-2 rounded-xl bg-ocean-600 active:bg-ocean-700 hover:bg-ocean-700 text-white text-xs font-semibold shadow-sm transition">↻ 更新</button>
     </div>
     <div id="updatedAt" class="text-slate-500 text-[11px] sm:text-xs mt-1">取得中…</div>
-    <p class="text-slate-400 text-[10px] sm:text-xs mt-0.5">葉山町特化 / 天気・気温・降水量＝Yahoo!天気(葉山町) ／ 潮位＝海快晴</p>
+    <p class="text-slate-400 text-[10px] sm:text-xs mt-0.5">天気・気温・降水量＝Yahoo!天気 ／ 波・風・潮位＝海快晴・Open-Meteo</p>
   </header>
+
+  <!-- 地点切替タブ -->
+  <div class="mb-3">
+    <div id="locTabs" class="grid grid-cols-2 gap-1.5">
+      <button data-loc="hayama" class="loc-btn">📍 葉山</button>
+      <button data-loc="zushi" class="loc-btn">📍 逗子海岸</button>
+    </div>
+  </div>
 
   <!-- 潮回りパネル -->
   <section id="tidePanel" class="rounded-2xl border border-slate-200 bg-white p-3 sm:p-5 mb-3 shadow-sm">
@@ -292,8 +300,14 @@ function syncTabButtons() {
  * Yahoo!天気(天気/気温/降水量)だけはCORS不可のため data.json (定期生成) を使う。
  * ====================================================================== */
 const UMI_API = 'https://api1.namidensetsu.com/api';
-const UMI_POINT_ID = '01170052';   // 一色海岸
-const LAT = 35.27, LON = 139.58, FCST_DAYS = 7;
+const FCST_DAYS = 7;
+// 対応地点(全く同じ仕様で切替)。海快晴id・座標はブラウザ直取得に、keyはdata.json(Yahoo)参照に使う
+const LOCATIONS = {
+  hayama: { key: 'hayama', short: '葉山', name: '葉山（一色海岸）', umiId: '01170052', lat: 35.27, lon: 139.58 },
+  zushi:  { key: 'zushi',  short: '逗子', name: '逗子海岸',         umiId: '11170008', lat: 35.29201, lon: 139.572651 },
+};
+let CUR_LOC = localStorage.getItem('hayamaLoc') || 'hayama';
+if (!LOCATIONS[CUR_LOC]) CUR_LOC = 'hayama';
 
 const pad2 = (n) => String(n).padStart(2, '0');
 const isoLocal = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:00`;
@@ -345,10 +359,10 @@ const moonEmojiFromAge = (age) => {
 };
 
 // 海快晴の公開API (認証不要) から 波/風/潮位/潮汐/月齢 をライブ取得
-async function fetchUmikaiseiLive() {
+async function fetchUmikaiseiLive(loc) {
   const now = new Date();
   const ymd = `${now.getFullYear()}${pad2(now.getMonth()+1)}${pad2(now.getDate())}`;
-  const q = (p, extra) => `${UMI_API}/${p}?apiver=1.0&os=web&id=${UMI_POINT_ID}${extra || ''}`;
+  const q = (p, extra) => `${UMI_API}/${p}?apiver=1.0&os=web&id=${loc.umiId}${extra || ''}`;
   const [comb, td, moon] = await Promise.all([
     jget(q('point_comb.php')).catch(() => null),
     jget(q('tide.php', `&date=${ymd}`)).catch(() => null),
@@ -399,8 +413,8 @@ async function fetchUmikaiseiLive() {
   return out;
 }
 
-// Open-Meteo: Marine(波) + ICON(風) + ECMWF(風) + 降水確率 をライブ取得
-async function fetchOpenMeteoLive() {
+// Open-Meteo: Marine(波) + ICON(風) + GFS(風) + 天気/気温/降水 をライブ取得
+async function fetchOpenMeteoLive(loc) {
   const res = {};
   const setH = (data, fields) => {
     if (!data || !data.hourly) return;
@@ -411,7 +425,7 @@ async function fetchOpenMeteoLive() {
       for (const [s, d] of fields) res[k][d] = h[s][i];
     });
   };
-  const base = `latitude=${LAT}&longitude=${LON}&forecast_days=${FCST_DAYS}&timezone=Asia%2FTokyo`;
+  const base = `latitude=${loc.lat}&longitude=${loc.lon}&forecast_days=${FCST_DAYS}&timezone=Asia%2FTokyo`;
   // GFS = Windyアプリ(無料版/低精度モード)と同じモデル。実測で平均誤差0.24m/sと一致。
   const [marine, icon, gfs, pop] = await Promise.all([
     jget(`https://marine-api.open-meteo.com/v1/marine?${base}&hourly=wave_height,wave_direction,wave_period`).catch(() => null),
@@ -510,16 +524,18 @@ function annotateTideClient(timeline, tide) {
 }
 
 async function load() {
-  $('#updatedAt').textContent = '読み込み中…';
+  const loc = LOCATIONS[CUR_LOC];
+  $('#updatedAt').textContent = `読み込み中…（${loc.short}）`;
   try {
     const [dj, umi, om] = await Promise.all([
       fetch('./data.json?t=' + Date.now()).then((r) => r.ok ? r.json() : {}).catch(() => ({})),
-      fetchUmikaiseiLive().catch(() => ({ tide: {}, hourly: {} })),
-      fetchOpenMeteoLive().catch(() => ({})),
+      fetchUmikaiseiLive(loc).catch(() => ({ tide: {}, hourly: {} })),
+      fetchOpenMeteoLive(loc).catch(() => ({})),
     ]);
-    // data.json の時刻別Yahooデータを取り出す
+    // data.json(地点別)から現在地のYahooデータを取り出す。旧形式(単一地点)にもフォールバック
+    const djLoc = (dj.locations && dj.locations[CUR_LOC]) || dj;
     const yahooByKey = {};
-    (dj.timeline || []).forEach((r) => { yahooByKey[r.key] = r.yahoo; });
+    (djLoc.timeline || []).forEach((r) => { yahooByKey[r.key] = r.yahoo; });
 
     let timeline = buildTimelineClient(om, umi, yahooByKey);
     timeline = annotateTideClient(timeline, umi.tide || {});
@@ -559,7 +575,26 @@ document.querySelectorAll('.tab-btn').forEach(b => {
     if (DATA) renderTable(DATA.timeline || []);
   });
 });
+// 地点タブ(葉山/逗子)の見た目と切替
+function syncLocButtons() {
+  document.querySelectorAll('.loc-btn').forEach(b => {
+    const on = b.dataset.loc === CUR_LOC;
+    b.className = 'loc-btn py-3 rounded-2xl text-lg sm:text-xl font-bold border-2 transition ' +
+      (on ? 'bg-ocean-600 text-white border-ocean-600 shadow' : 'bg-white text-slate-500 border-slate-300 active:bg-slate-50');
+  });
+}
+document.querySelectorAll('.loc-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    if (CUR_LOC === b.dataset.loc) return;
+    CUR_LOC = b.dataset.loc;
+    localStorage.setItem('hayamaLoc', CUR_LOC);
+    syncLocButtons();
+    load();
+  });
+});
+
 $('#reloadBtn').addEventListener('click', () => load());
+syncLocButtons();
 syncTabButtons();
 load();
 </script>

@@ -105,7 +105,8 @@ const FORECAST_DAYS = 7; // 取得したい先読み日数(Open-Meteoは最大16
 // Windyも参照する独立モデルで、Open-Meteo無料。.envの WINDY_WIND_MODEL で切替可(ecmwf_ifs025 / gfs_seamless / jma_msm 等)。
 const WINDY_WIND_MODEL = process.env.WINDY_WIND_MODEL || 'icon_seamless';
 
-async function fetchOpenMeteo() {
+async function fetchOpenMeteo(loc) {
+  const lat = loc.lat, lon = loc.lon;
   const result = {}; // key: "YYYY-MM-DDTHH:00" -> { wave, windDeg, windSpeed, pop }
   const setH = (data, fields) => {
     if (!data) return;
@@ -119,14 +120,14 @@ async function fetchOpenMeteo() {
 
   // 各ソースを並列取得(各々リトライ付き)
   const windParams = (model) => ({
-    latitude: HAYAMA_LAT, longitude: HAYAMA_LON,
+    latitude: lat, longitude: lon,
     hourly: 'wind_speed_10m,wind_direction_10m',
     models: model,
     forecast_days: FORECAST_DAYS, timezone: 'Asia/Tokyo', wind_speed_unit: 'ms',
   });
   const [marine, wind, gfs, pop] = await Promise.all([
     getWithRetry('https://marine-api.open-meteo.com/v1/marine', {
-      latitude: HAYAMA_LAT, longitude: HAYAMA_LON,
+      latitude: lat, longitude: lon,
       hourly: 'wave_height,wave_direction,wave_period',
       forecast_days: FORECAST_DAYS, timezone: 'Asia/Tokyo',
     }, 'Marine(波)'),
@@ -134,7 +135,7 @@ async function fetchOpenMeteo() {
     // GFS = Windyアプリ(無料版/低精度モード)と同じモデル
     getWithRetry('https://api.open-meteo.com/v1/forecast', windParams('gfs_seamless'), '風(gfs_seamless)'),
     getWithRetry('https://api.open-meteo.com/v1/forecast', {
-      latitude: HAYAMA_LAT, longitude: HAYAMA_LON,
+      latitude: lat, longitude: lon,
       hourly: 'precipitation_probability',
       forecast_days: FORECAST_DAYS, timezone: 'Asia/Tokyo',
     }, '降水確率'),
@@ -156,11 +157,11 @@ async function fetchOpenMeteo() {
 /* ======================================================================
  * 2) Yahoo!天気 (3時間ごと: 天気/気温/降水量/風)
  * ====================================================================== */
-async function fetchYahoo() {
+async function fetchYahoo(loc) {
   // key: "YYYY-MM-DDTHH:00" -> { icon, desc, temp, rainMm, windDir, windDeg, windSpeed }
   const result = {};
   try {
-    const res = await axios.get(YAHOO_URL, {
+    const res = await axios.get(loc.yahooUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
       }, timeout: 15000,
@@ -260,7 +261,12 @@ function weatherEmoji(desc) {
  * ====================================================================== */
 // 海快晴の公開データAPI (api1.namidensetsu.com)。ログイン/ブラウザ不要。
 const UMI_API = 'https://api1.namidensetsu.com/api';
-const UMI_POINT_ID = process.env.UMIKAISEI_POINT_ID || '01170052'; // 一色海岸
+
+// 対応地点(全く同じ仕様で複数地点を切替表示)
+const LOCATIONS = {
+  hayama: { key: 'hayama', name: '葉山(一色海岸)', short: '葉山', umiId: '01170052', lat: 35.27, lon: 139.58, yahooUrl: 'https://weather.yahoo.co.jp/weather/jp/14/4610/14301.html' },
+  zushi:  { key: 'zushi',  name: '逗子海岸',       short: '逗子', umiId: '11170008', lat: 35.29201, lon: 139.572651, yahooUrl: 'https://weather.yahoo.co.jp/weather/jp/14/4610/14208.html' },
+};
 
 async function umiGet(path, params, attempts = 3) {
   const qs = new URLSearchParams({ apiver: '1.0', os: 'web', ...params }).toString();
@@ -288,16 +294,17 @@ const numOr = (v) => { if (v == null) return null; const n = parseFloat(v); retu
 const umiDtToKey = (dt) => { const s = String(dt); return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(8, 10)}:00`; };
 const pad2 = (n) => String(n).padStart(2, '0');
 
-// 海快晴の一色海岸データを公開APIから直接取得 (point_comb=風/波/潮位, tide=潮汐, moonphase=月齢)
-async function fetchUmikaisei() {
+// 海快晴データを公開APIから直接取得 (point_comb=風/波/潮位, tide=潮汐, moonphase=月齢)
+async function fetchUmikaisei(loc) {
+  const id = loc.umiId;
   const out = { tide: {}, hourly: {}, debug: null };
   try {
     const now = new Date();
     const ymd = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}`;
     const [comb, tideRes, moon] = await Promise.all([
-      umiGet('point_comb.php', { id: UMI_POINT_ID }),
-      umiGet('tide.php', { id: UMI_POINT_ID, date: ymd }),
-      umiGet('moonphase.php', { id: UMI_POINT_ID, date: ymd.slice(0, 6) }),
+      umiGet('point_comb.php', { id }),
+      umiGet('tide.php', { id, date: ymd }),
+      umiGet('moonphase.php', { id, date: ymd.slice(0, 6) }),
     ]);
 
     // 毎時の 独自WRF(風) / 独自SWAN(波) / 潮位
@@ -498,18 +505,18 @@ const CACHE_MS = 10 * 60 * 1000; // 10分
 // 重複を避けつつビルドを1本化。完了時にキャッシュ更新。
 function rebuild() {
   if (!building) {
-    building = buildPayload()
+    building = buildPayload(LOCATIONS.hayama)
       .then((data) => { cache = { ts: Date.now(), data }; return data; })
       .finally(() => { building = null; });
   }
   return building;
 }
 
-async function buildPayload() {
+async function buildPayload(loc) {
   const [openMeteo, yahoo, umikaisei] = await Promise.all([
-    fetchOpenMeteo(),
-    fetchYahoo(),
-    fetchUmikaisei(),
+    fetchOpenMeteo(loc),
+    fetchYahoo(loc),
+    fetchUmikaisei(loc),
   ]);
   let timeline = buildTimeline({ openMeteo, yahoo, umikaisei });
   timeline = annotateTide(timeline, umikaisei.tide || {});
@@ -563,5 +570,5 @@ if (require.main === module) {
   });
 }
 
-// generate.js から呼べるようにデータ生成関数を公開
-module.exports = { buildPayload };
+// generate.js から呼べるようにデータ生成関数と地点一覧を公開
+module.exports = { buildPayload, LOCATIONS };
