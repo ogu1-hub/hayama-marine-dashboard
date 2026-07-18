@@ -269,11 +269,18 @@ function renderTable(timeline) {
     const tdTide = tideCellHtml(r);
     const windCells = windCell(r.yahoo, SEP_L) + windCell(r.umikaisei) + windCell(r.windy) + windCell(r.gfs);
 
+    // 波風タブ用: 潮位が別列に無いので、時間の下に青色コンパクトで潮位を表示
+    const tideVal = r.umikaisei.tide;
+    const tdTimeTide = `<td class="sticky-col ${stickyBg} px-1.5 sm:px-3 py-1.5 font-bold text-base sm:text-lg text-slate-800">
+        ${r.label}${badge}
+        ${tideVal != null ? `<div class="text-[10px] font-bold text-blue-600 leading-none mt-0.5">潮 ${tideVal}<span class="text-[8px] font-normal">cm</span></div>` : ''}
+      </td>`;
+
     let cells;
     if (tab === 'basic') cells = tdTime + tdWxBig + tdTemp + tdRain + tdTide;
     else if (tab === 'wind') cells = tdTime + tdWxSmall + tdTide + windCells;
     else if (tab === 'wave') cells = tdTime + tdWxSmall + tdTide + umiWaveCell(r, SEP_L) + windyWaveCell(r);
-    else cells = tdTime + windCells + umiWaveCell(r, 'border-l-2 border-indigo-300') + windyWaveCell(r);
+    else cells = tdTimeTide + windCells + umiWaveCell(r, 'border-l-2 border-indigo-300') + windyWaveCell(r);
 
     return `${divider}<tr class="${rowBg} ${nightCls} border-t border-slate-100 active:bg-sky-50">${cells}</tr>`;
   }).join('');
@@ -432,13 +439,13 @@ async function fetchOpenMeteoLive(loc) {
     jget(`https://marine-api.open-meteo.com/v1/marine?${base}&hourly=wave_height,wave_direction,wave_period`).catch(() => null),
     jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=icon_seamless&wind_speed_unit=ms`).catch(() => null),
     jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=gfs_seamless&wind_speed_unit=ms`).catch(() => null),
-    // best_match(日本では気象庁MSM)。Yahooの時間別は2日分しか無いため、その先を埋める用途にも使う
-    jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=precipitation_probability,temperature_2m,precipitation,weather_code`).catch(() => null),
+    // best_match(日本では気象庁MSM=Yahooと同系統)。Yahooの時間別は2日分しか無いため、その先の天気/気温/降水/風を埋める用途にも使う
+    jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=precipitation_probability,temperature_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m&wind_speed_unit=ms`).catch(() => null),
   ]);
   setH(marine, [['wave_height','wave'], ['wave_direction','waveDeg'], ['wave_period','wavePeriod']]);
   setH(icon, [['wind_speed_10m','windSpeed'], ['wind_direction_10m','windDeg']]);
   setH(gfs, [['wind_speed_10m','windSpeedG'], ['wind_direction_10m','windDegG']]);
-  setH(pop, [['precipitation_probability','pop'], ['temperature_2m','temp2'], ['precipitation','precip2'], ['weather_code','wcode']]);
+  setH(pop, [['precipitation_probability','pop'], ['temperature_2m','temp2'], ['precipitation','precip2'], ['weather_code','wcode'], ['wind_speed_10m','windSpeed2'], ['wind_direction_10m','windDeg2']]);
   return res;
 }
 
@@ -465,15 +472,23 @@ function buildTimelineClient(om, umi, yahooByKey) {
     tl.push({
       key, hour: d.getHours(), label: `${pad2(d.getHours())}:00`, dateLabel: `${d.getMonth()+1}/${d.getDate()}`,
       isNight: d.getHours() >= 0 && d.getHours() <= 4,
-      // Yahooの時間別は2日分しか公開されていないため、その先はOpen-Meteo(日本では気象庁MSM)で補完
-      yahoo: {
-        icon: y.icon || wmoEmoji(o.wcode), desc: y.desc || wmoText(o.wcode),
-        temp: y.temp ?? (o.temp2 != null ? Math.round(o.temp2) : null),
-        rainMm: y.rainMm ?? (o.precip2 ?? null),
-        fromOM: y.temp == null && o.temp2 != null,   // Yahoo範囲外(補完値)の目印
-        pop: y.pop ?? o.pop ?? null, windDir: y.windDir || '--', windDeg: y.windDeg ?? null,
-        windArrow: y.windArrow || '', windSpeed: y.windSpeed ?? null, windAlert: y.windAlert || '',
-      },
+      // Yahooの時間別(天気/気温/降水/風)は2日分しか公開されていないため、その先はOpen-Meteo(日本では気象庁MSM=Yahooと同系統)で補完
+      yahoo: (() => {
+        const yWindDeg = y.windDeg ?? o.windDeg2 ?? null;
+        const yWindSpd = y.windSpeed ?? o.windSpeed2 ?? null;
+        return {
+          icon: y.icon || wmoEmoji(o.wcode), desc: y.desc || wmoText(o.wcode),
+          temp: y.temp ?? (o.temp2 != null ? Math.round(o.temp2) : null),
+          rainMm: y.rainMm ?? (o.precip2 ?? null),
+          fromOM: y.temp == null && o.temp2 != null,   // Yahoo範囲外(補完値)の目印
+          pop: y.pop ?? o.pop ?? null,
+          windDir: y.windDir || (yWindDeg != null ? degToJpDir(yWindDeg) : '--'),
+          windDeg: yWindDeg,
+          windArrow: degToArrow(yWindDeg),
+          windSpeed: yWindSpd,
+          windAlert: yWindSpd >= 5 ? localWindAlert(yWindDeg) : '',
+        };
+      })(),
       umikaisei: {
         wave: u.wave ?? o.wave ?? null, waveFromFallback: u.wave == null && o.wave != null,
         windDir: u.windDir || (o.windDeg != null ? degToJpDir(o.windDeg) : '--'),
