@@ -273,7 +273,7 @@ function renderTable(timeline) {
     const tideVal = r.umikaisei.tide;
     const tdTimeTide = `<td class="sticky-col ${stickyBg} px-1.5 sm:px-3 py-1.5 font-bold text-base sm:text-lg text-slate-800">
         ${r.label}${badge}
-        ${tideVal != null ? `<div class="text-[10px] font-bold text-blue-600 leading-none mt-0.5">潮 ${tideVal}<span class="text-[8px] font-normal">cm</span></div>` : ''}
+        ${tideVal != null ? `<div class="text-xs sm:text-sm font-bold text-blue-600 leading-none mt-1">潮 ${tideVal}<span class="text-[9px] font-normal">cm</span></div>` : ''}
       </td>`;
 
     let cells;
