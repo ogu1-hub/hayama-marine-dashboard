@@ -41,11 +41,12 @@
     <p class="text-slate-400 text-[10px] sm:text-xs mt-0.5">天気・気温・降水量＝Yahoo!天気 ／ 波・風・潮位＝海快晴・Open-Meteo</p>
   </header>
 
-  <!-- 地点切替タブ -->
-  <div class="mb-3">
-    <div id="locTabs" class="grid grid-cols-2 gap-1.5">
-      <button data-loc="hayama" class="loc-btn">📍 葉山</button>
-      <button data-loc="zushi" class="loc-btn">📍 逗子海岸</button>
+  <!-- 地点選択(プルダウン) -->
+  <div class="mb-3 flex items-center gap-2">
+    <span class="text-slate-500 text-sm font-semibold shrink-0">📍 地点</span>
+    <div class="relative flex-1">
+      <select id="locSelect" class="w-full appearance-none px-4 py-3 pr-10 rounded-2xl border-2 border-ocean-300 bg-white text-lg sm:text-xl font-bold text-ocean-700 shadow-sm focus:outline-none focus:border-ocean-600"></select>
+      <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ocean-500 text-lg">▾</span>
     </div>
   </div>
 
@@ -575,26 +576,18 @@ document.querySelectorAll('.tab-btn').forEach(b => {
     if (DATA) renderTable(DATA.timeline || []);
   });
 });
-// 地点タブ(葉山/逗子)の見た目と切替
-function syncLocButtons() {
-  document.querySelectorAll('.loc-btn').forEach(b => {
-    const on = b.dataset.loc === CUR_LOC;
-    b.className = 'loc-btn py-3 rounded-2xl text-lg sm:text-xl font-bold border-2 transition ' +
-      (on ? 'bg-ocean-600 text-white border-ocean-600 shadow' : 'bg-white text-slate-500 border-slate-300 active:bg-slate-50');
-  });
-}
-document.querySelectorAll('.loc-btn').forEach(b => {
-  b.addEventListener('click', () => {
-    if (CUR_LOC === b.dataset.loc) return;
-    CUR_LOC = b.dataset.loc;
-    localStorage.setItem('hayamaLoc', CUR_LOC);
-    syncLocButtons();
-    load();
-  });
+// 地点プルダウン(LOCATIONSから自動生成。地点追加は設定1行でOK)
+const locSelect = $('#locSelect');
+locSelect.innerHTML = Object.values(LOCATIONS)
+  .map((l) => `<option value="${l.key}"${l.key === CUR_LOC ? ' selected' : ''}>${l.name}</option>`)
+  .join('');
+locSelect.addEventListener('change', () => {
+  CUR_LOC = locSelect.value;
+  localStorage.setItem('hayamaLoc', CUR_LOC);
+  load();
 });
 
 $('#reloadBtn').addEventListener('click', () => load());
-syncLocButtons();
 syncTabButtons();
 load();
 </script>
