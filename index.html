@@ -333,6 +333,14 @@ const numOr = (v) => { if (v == null) return null; const n = parseFloat(v); retu
 const dirCodeToDeg = (c) => (c == null || c === '') ? null : ((((+c % 16) + 16) % 16) * 22.5); // 0=北
 const umiDtToKey = (dt) => { const s = String(dt); return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}T${s.slice(8,10)}:00`; };
 const jget = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
+// 回線が不安定な端末向けにリトライ付き取得(失敗時はnullを返す)
+async function jgetRetry(url, attempts = 3) {
+  for (let i = 1; i <= attempts; i++) {
+    try { return await jget(url); }
+    catch (e) { if (i < attempts) await new Promise((r) => setTimeout(r, 600 * i)); }
+  }
+  return null;
+}
 // WMO天気コード → 絵文字/日本語 (Yahooの時間別が尽きた先をOpen-Meteoで埋める用)
 function wmoEmoji(c) {
   if (c == null) return '';
@@ -436,11 +444,11 @@ async function fetchOpenMeteoLive(loc) {
   const base = `latitude=${loc.lat}&longitude=${loc.lon}&forecast_days=${FCST_DAYS}&timezone=Asia%2FTokyo`;
   // GFS = Windyアプリ(無料版/低精度モード)と同じモデル。実測で平均誤差0.24m/sと一致。
   const [marine, icon, gfs, pop] = await Promise.all([
-    jget(`https://marine-api.open-meteo.com/v1/marine?${base}&hourly=wave_height,wave_direction,wave_period`).catch(() => null),
-    jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=icon_seamless&wind_speed_unit=ms`).catch(() => null),
-    jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=gfs_seamless&wind_speed_unit=ms`).catch(() => null),
+    jgetRetry(`https://marine-api.open-meteo.com/v1/marine?${base}&hourly=wave_height,wave_direction,wave_period`),
+    jgetRetry(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=icon_seamless&wind_speed_unit=ms`),
+    jgetRetry(`https://api.open-meteo.com/v1/forecast?${base}&hourly=wind_speed_10m,wind_direction_10m&models=gfs_seamless&wind_speed_unit=ms`),
     // best_match(日本では気象庁MSM=Yahooと同系統)。Yahooの時間別は2日分しか無いため、その先の天気/気温/降水/風を埋める用途にも使う
-    jget(`https://api.open-meteo.com/v1/forecast?${base}&hourly=precipitation_probability,temperature_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m&wind_speed_unit=ms`).catch(() => null),
+    jgetRetry(`https://api.open-meteo.com/v1/forecast?${base}&hourly=precipitation_probability,temperature_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m&wind_speed_unit=ms`),
   ]);
   setH(marine, [['wave_height','wave'], ['wave_direction','waveDeg'], ['wave_period','wavePeriod']]);
   setH(icon, [['wind_speed_10m','windSpeed'], ['wind_direction_10m','windDeg']]);
@@ -450,11 +458,12 @@ async function fetchOpenMeteoLive(loc) {
 }
 
 // 「今」を起点にタイムラインを組み立てる (Yahooはdata.jsonの時刻別データを利用)
-function buildTimelineClient(om, umi, yahooByKey) {
+// djByKey: data.json(サーバー側で取得済み)。端末からOpen-Meteoに繋がらない時のICON/GFS/波のフォールバックに使う
+function buildTimelineClient(om, umi, yahooByKey, djByKey = {}) {
   const now = new Date(); now.setMinutes(0, 0, 0);
   const nowMs = now.getTime();
   const umiKeys = Object.keys(umi.hourly || {});
-  const srcKeys = umiKeys.length ? umiKeys : Object.keys(om);
+  const srcKeys = umiKeys.length ? umiKeys : (Object.keys(om).length ? Object.keys(om) : Object.keys(djByKey));
   let maxHours = 24;
   for (const k of srcKeys) {
     const h = Math.floor((new Date(k).getTime() - nowMs) / 3600000);
@@ -467,6 +476,9 @@ function buildTimelineClient(om, umi, yahooByKey) {
     const d = new Date(nowMs + i * 3600000);
     const key = isoLocal(d);
     const o = om[key] || {}, u = (umi.hourly || {})[key] || {}, y = yahooByKey[key] || {};
+    // ライブ取得できなかった場合のフォールバック元(data.json)
+    const dj = djByKey[key] || {};
+    const djW = dj.windy || {}, djG = dj.gfs || {};
     const uWindDeg = u.windDeg ?? o.windDeg ?? null;
     const uWindSpd = u.windSpeed ?? o.windSpeed ?? null;
     tl.push({
@@ -490,22 +502,33 @@ function buildTimelineClient(om, umi, yahooByKey) {
         };
       })(),
       umikaisei: {
-        wave: u.wave ?? o.wave ?? null, waveFromFallback: u.wave == null && o.wave != null,
+        wave: u.wave ?? o.wave ?? djW.wave ?? null,
+        waveFromFallback: u.wave == null && (o.wave != null || djW.wave != null),
         windDir: u.windDir || (o.windDeg != null ? degToJpDir(o.windDeg) : '--'),
         windDeg: uWindDeg, windArrow: degToArrow(uWindDeg), windSpeed: uWindSpd,
         windAlert: uWindSpd >= 5 ? localWindAlert(uWindDeg) : '',
         tide: u.tide ?? null, tideTrend: u.tideTrend ?? null,
       },
-      windy: {
-        wave: o.wave ?? null, windDir: o.windDeg != null ? degToJpDir(o.windDeg) : '--',
-        windDeg: o.windDeg ?? null, windArrow: degToArrow(o.windDeg), windSpeed: o.windSpeed ?? null,
-        windAlert: o.windSpeed >= 5 ? localWindAlert(o.windDeg) : '',
-      },
-      gfs: {
-        windDir: o.windDegG != null ? degToJpDir(o.windDegG) : '--', windDeg: o.windDegG ?? null,
-        windArrow: degToArrow(o.windDegG), windSpeed: o.windSpeedG ?? null,
-        windAlert: o.windSpeedG >= 5 ? localWindAlert(o.windDegG) : '',
-      },
+      // ICON(風)・波。ライブ取得できない端末では data.json の値にフォールバック
+      windy: (() => {
+        const deg = o.windDeg ?? djW.windDeg ?? null;
+        const spd = o.windSpeed ?? djW.windSpeed ?? null;
+        return {
+          wave: o.wave ?? djW.wave ?? null,
+          windDir: deg != null ? degToJpDir(deg) : '--',
+          windDeg: deg, windArrow: degToArrow(deg), windSpeed: spd,
+          windAlert: spd >= 5 ? localWindAlert(deg) : '',
+        };
+      })(),
+      gfs: (() => {
+        const deg = o.windDegG ?? djG.windDeg ?? null;
+        const spd = o.windSpeedG ?? djG.windSpeed ?? null;
+        return {
+          windDir: deg != null ? degToJpDir(deg) : '--',
+          windDeg: deg, windArrow: degToArrow(deg), windSpeed: spd,
+          windAlert: spd >= 5 ? localWindAlert(deg) : '',
+        };
+      })(),
     });
   }
 
@@ -550,10 +573,10 @@ async function load() {
     ]);
     // data.json(地点別)から現在地のYahooデータを取り出す。旧形式(単一地点)にもフォールバック
     const djLoc = (dj.locations && dj.locations[CUR_LOC]) || dj;
-    const yahooByKey = {};
-    (djLoc.timeline || []).forEach((r) => { yahooByKey[r.key] = r.yahoo; });
+    const yahooByKey = {}, djByKey = {};
+    (djLoc.timeline || []).forEach((r) => { yahooByKey[r.key] = r.yahoo; djByKey[r.key] = r; });
 
-    let timeline = buildTimelineClient(om, umi, yahooByKey);
+    let timeline = buildTimelineClient(om, umi, yahooByKey, djByKey);
     timeline = annotateTideClient(timeline, umi.tide || {});
     if (!timeline.length) throw new Error('データを取得できませんでした');
     DATA = { timeline, tide: umi.tide || {} };
@@ -564,11 +587,14 @@ async function load() {
     renderTide(umi.tide || {});
     renderTable(timeline);
 
+    // ICON/GFSがライブ取得できたか(端末の回線でapi.open-meteo.comに繋がらない場合はdata.jsonで代替)
+    const omLive = timeline.some((r) => (om[r.key] || {}).windSpeed != null);
+    const iconOk = timeline.some((r) => r.windy.windSpeed != null);
     $('#sourceStatus').innerHTML =
       chip(Object.keys(yahooByKey).length > 0, 'Yahoo') +
       chip(Object.keys(umi.hourly || {}).length > 0, '海快晴波/風') +
       chip(((umi.tide || {}).highs || []).length > 0, '海快晴潮汐') +
-      chip(Object.keys(om).length > 0, 'Open-Meteo');
+      chip(iconOk, omLive ? 'ICON/GFS' : (iconOk ? 'ICON/GFS(保存値)' : 'ICON/GFS'));
 
     const hm = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
     const yj = dj.generatedAt ? new Date(dj.generatedAt) : null;
