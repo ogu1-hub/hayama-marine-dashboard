@@ -313,6 +313,8 @@ const FCST_DAYS = 7;
 const LOCATIONS = {
   hayama: { key: 'hayama', short: '葉山', name: '葉山（一色海岸）', umiId: '01170052', lat: 35.27, lon: 139.58 },
   zushi:  { key: 'zushi',  short: '逗子', name: '逗子海岸',         umiId: '11170008', lat: 35.29201, lon: 139.572651 },
+  miyake: { key: 'miyake', short: '三宅', name: '三宅島',           umiId: '07150016', lat: 34.080104, lon: 139.565678 },
+  mikura: { key: 'mikura', short: '御蔵', name: '御蔵島',           umiId: '10150015', lat: 33.897239, lon: 139.589096 },
 };
 let CUR_LOC = localStorage.getItem('hayamaLoc') || 'hayama';
 if (!LOCATIONS[CUR_LOC]) CUR_LOC = 'hayama';

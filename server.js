@@ -266,6 +266,8 @@ const UMI_API = 'https://api1.namidensetsu.com/api';
 const LOCATIONS = {
   hayama: { key: 'hayama', name: '葉山(一色海岸)', short: '葉山', umiId: '01170052', lat: 35.27, lon: 139.58, yahooUrl: 'https://weather.yahoo.co.jp/weather/jp/14/4610/14301.html' },
   zushi:  { key: 'zushi',  name: '逗子海岸',       short: '逗子', umiId: '11170008', lat: 35.29201, lon: 139.572651, yahooUrl: 'https://weather.yahoo.co.jp/weather/jp/14/4610/14208.html' },
+  miyake: { key: 'miyake', name: '三宅島',         short: '三宅', umiId: '07150016', lat: 34.080104, lon: 139.565678, yahooUrl: 'https://weather.yahoo.co.jp/weather/jp/13/4430/13381.html' },
+  mikura: { key: 'mikura', name: '御蔵島',         short: '御蔵', umiId: '10150015', lat: 33.897239, lon: 139.589096, yahooUrl: 'https://weather.yahoo.co.jp/weather/jp/13/4430/13382.html' },
 };
 
 async function umiGet(path, params, attempts = 3) {
