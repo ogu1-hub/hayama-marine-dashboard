@@ -4,7 +4,12 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="波風情報" />
 <meta name="theme-color" content="#f1f5f9" />
+<!-- iOSのホーム画面アプリはHTMLを強くキャッシュするため、キャッシュを抑制する -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>🌊 Sunny Funny Days 波風情報</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -31,13 +36,14 @@
 
   <!-- ヘッダー -->
   <header class="mb-3">
-    <div class="flex items-center justify-between gap-2">
-      <h1 class="text-lg sm:text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-1.5 leading-tight text-slate-900">
-        <span>🌊</span>
-        <span style="color:#F5A623">Sunny</span>
-        <span style="color:#8CC63F">Funny</span>
-        <span style="color:#29ABE2">Days</span>
-        <span class="text-ocean-600">波風情報</span>
+    <div class="flex items-start justify-between gap-2">
+      <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight flex flex-wrap items-center gap-x-2 gap-y-0.5 leading-tight text-slate-900">
+        <span class="whitespace-nowrap">
+          <span style="color:#F5A623">Sunny</span>
+          <span style="color:#8CC63F">Funny</span>
+          <span style="color:#29ABE2">Days</span>
+        </span>
+        <span class="text-ocean-600 whitespace-nowrap">🌊 波風情報</span>
       </h1>
       <button id="reloadBtn" class="shrink-0 px-3 py-2 rounded-xl bg-ocean-600 active:bg-ocean-700 hover:bg-ocean-700 text-white text-xs font-semibold shadow-sm transition">↻ 更新</button>
     </div>
@@ -98,6 +104,23 @@
 
 <script>
 const $ = (s, el=document) => el.querySelector(s);
+// アプリのバージョン。index.htmlを更新したらこの値を変える(更新検知に使う)
+const APP_VERSION = '20260724a';
+
+// iOSのホーム画面アプリはHTMLをキャッシュし続け、内容を変えても反映されない。
+// 配信中のindex.htmlのAPP_VERSIONと比較し、違えば新しいURLで自動リロードする。
+async function checkForUpdate() {
+  try {
+    const txt = await fetch('./index.html?cb=' + Date.now(), { cache: 'no-store' }).then((r) => r.text());
+    const m = txt.match(/APP_VERSION\s*=\s*'([^']+)'/);
+    if (!m || m[1] === APP_VERSION) return false;
+    // 同じバージョンで既にリロード済みなら無限ループを避ける
+    if (new URL(location.href).searchParams.get('v') === m[1]) return false;
+    location.replace(location.pathname + '?v=' + m[1]);
+    return true;
+  } catch (e) { return false; }
+}
+
 let DATA = null;
 let activeTab = 'basic';
 let GEN_DATE = { md: '', wd: '' }; // 取得日(簡易: M/D, 曜日)
@@ -571,6 +594,8 @@ function annotateTideClient(timeline, tide) {
 async function load() {
   const loc = LOCATIONS[CUR_LOC];
   $('#updatedAt').textContent = `読み込み中…（${loc.short}）`;
+  // 新しいバージョンが公開されていれば自動で読み込み直す(iOSのホーム画面アプリ対策)
+  if (await checkForUpdate()) return;
   try {
     const [dj, umi, om] = await Promise.all([
       fetch('./data.json?t=' + Date.now()).then((r) => r.ok ? r.json() : {}).catch(() => ({})),
