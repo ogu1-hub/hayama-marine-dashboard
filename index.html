@@ -105,7 +105,7 @@
 <script>
 const $ = (s, el=document) => el.querySelector(s);
 // アプリのバージョン。index.htmlを更新したらこの値を変える(更新検知に使う)
-const APP_VERSION = '20260724b';
+const APP_VERSION = '20260725a';
 
 // iOSのホーム画面アプリはHTMLをキャッシュし続け、内容を変えても反映されない。
 // 配信中のindex.htmlのAPP_VERSIONと比較し、違えば新しいURLで自動リロードする。
@@ -240,7 +240,7 @@ function renderTable(timeline) {
   const thead = $('#thead');
   const tab = activeTab;
   const windTh = (src, lb) => `<th class="px-0.5 py-1 bg-sky-50 ${lb||''}"><div class="text-[11px] sm:text-xs text-ocean-700 font-bold">${src}</div><div class="text-[8px] text-slate-400 font-normal">風 m/s</div></th>`;
-  const waveTh = (src, lb) => `<th class="px-1 py-1 bg-indigo-50 ${lb||''}"><div class="text-[11px] sm:text-xs text-indigo-700 font-bold">${src}</div><div class="text-[8px] text-slate-400 font-normal">波 m</div></th>`;
+  const waveTh = (src, lb) => `<th class="px-1 py-1 bg-indigo-50 ${lb||''}"><div class="text-[11px] sm:text-xs text-indigo-700 font-bold leading-tight whitespace-normal break-words max-w-[3.2em] mx-auto">${src}</div><div class="text-[8px] text-slate-400 font-normal">波 m</div></th>`;
   const TH_TIME = `<th class="sticky-col bg-slate-100 px-1.5 sm:px-3 py-1 text-left text-[10px] sm:text-xs">時間</th>`;
   const TH_WX   = `<th class="px-1 py-1 text-[10px] sm:text-xs">天気</th>`;
   const TH_TEMP = `<th class="px-1 py-1 text-[10px] sm:text-xs">🌡️気温<span class="block text-[8px] text-slate-400 font-normal">℃</span></th>`;
@@ -299,7 +299,11 @@ function renderTable(timeline) {
     // 波風タブ用: 潮位が別列に無いので、時間の下に青色コンパクトで潮位を表示
     const tideVal = r.umikaisei.tide;
     const tdTimeTide = `<td class="sticky-col ${stickyBg} px-1.5 sm:px-3 py-1.5 font-bold text-base sm:text-lg text-slate-800">
-        ${r.label}${badge}
+        <div class="flex items-center gap-1">
+          <span>${r.label}</span>
+          <span class="text-lg sm:text-xl leading-none">${r.yahoo.icon||''}</span>
+        </div>
+        ${badge}
         ${tideVal != null ? `<div class="text-xs sm:text-sm font-bold text-blue-600 leading-none mt-1">潮 ${tideVal}<span class="text-[9px] font-normal">cm</span></div>` : ''}
       </td>`;
 
