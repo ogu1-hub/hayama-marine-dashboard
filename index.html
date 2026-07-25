@@ -105,7 +105,7 @@
 <script>
 const $ = (s, el=document) => el.querySelector(s);
 // アプリのバージョン。index.htmlを更新したらこの値を変える(更新検知に使う)
-const APP_VERSION = '20260724a';
+const APP_VERSION = '20260724b';
 
 // iOSのホーム画面アプリはHTMLをキャッシュし続け、内容を変えても反映されない。
 // 配信中のindex.htmlのAPP_VERSIONと比較し、違えば新しいURLで自動リロードする。
@@ -343,8 +343,8 @@ const LOCATIONS = {
   miyake: { key: 'miyake', short: '三宅', name: '三宅島',           umiId: '07150016', lat: 34.080104, lon: 139.565678 },
   mikura: { key: 'mikura', short: '御蔵', name: '御蔵島',           umiId: '10150015', lat: 33.897239, lon: 139.589096 },
 };
-let CUR_LOC = localStorage.getItem('hayamaLoc') || 'hayama';
-if (!LOCATIONS[CUR_LOC]) CUR_LOC = 'hayama';
+// 開くたび・更新のたびに必ず「葉山(一色海岸)」を初期表示にする(前回選択は記憶しない)
+let CUR_LOC = 'hayama';
 
 const pad2 = (n) => String(n).padStart(2, '0');
 const isoLocal = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:00`;
@@ -654,8 +654,7 @@ locSelect.innerHTML = Object.values(LOCATIONS)
   .map((l) => `<option value="${l.key}"${l.key === CUR_LOC ? ' selected' : ''}>${l.name}</option>`)
   .join('');
 locSelect.addEventListener('change', () => {
-  CUR_LOC = locSelect.value;
-  localStorage.setItem('hayamaLoc', CUR_LOC);
+  CUR_LOC = locSelect.value;   // その場の切替のみ(記憶しない=次回は葉山に戻る)
   load();
 });
 
