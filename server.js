@@ -387,14 +387,21 @@ function isoLocal(d) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
 }
 
-// 3時間ごとデータを各時刻に展開するための「直近の3hスロット」キー
+// 3時間ごとデータ(Yahooは0,3,6...時のみ)を各時刻に展開するための「最も近い3hスロット」キー
+// 単純に直前のブロックへ丸めると、例えば17時はまだ15時の値のままになり
+// 実際のYahoo!天気(18時に近い値になっているはず)とズレて見えるため、前後どちらに近いかで選ぶ。
 function nearestYahooKey(yahoo, key) {
   if (yahoo[key]) return key;
-  // 同日の0,3,6...のうち、その時刻を含むブロックへ寄せる
   const d = new Date(key);
-  const block = Math.floor(d.getHours() / 3) * 3;
-  d.setHours(block, 0, 0, 0);
-  return isoLocal(d);
+  const h = d.getHours();
+  const blocks = [Math.round(h / 3) * 3, Math.floor(h / 3) * 3, Math.ceil(h / 3) * 3];
+  for (const block of blocks) {
+    const dd = new Date(d);
+    dd.setHours(block, 0, 0, 0);
+    const k = isoLocal(dd);
+    if (yahoo[k]) return k;
+  }
+  return key;
 }
 
 function buildTimeline({ openMeteo, yahoo, umikaisei }) {
