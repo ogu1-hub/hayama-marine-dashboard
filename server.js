@@ -2,7 +2,7 @@
  * 葉山・一色海岸特化 24時間 気象・海洋データ統合ダッシュボード
  *
  * データソース (すべて公開API/HTTP。ログイン・ブラウザ不要):
- *   1. Yahoo!天気  … 3時間ごとの天気/気温/降水 (cheerioでHTMLパース)
+ *   1. Yahoo!天気  … 天気/降水は3時間ごと、気温/風は1時間ごと(熱中症情報ページ)。cheerioでHTMLパース
  *   2. 海快晴       … 一色海岸の波/風/潮位/潮回り (api1.namidensetsu.com の公開API直叩き)
  *   3. Open-Meteo  … Marine API(波) + ICON/ECMWF(風) + 降水確率
  */
@@ -34,6 +34,14 @@ const JP_DIR_DEG = {
   '南': 180, '南南西': 202.5, '南西': 225, '西南西': 247.5,
   '西': 270, '西北西': 292.5, '北西': 315, '北北西': 337.5,
   '静穏': null, '無風': null,
+};
+
+// 16方位(英略号, Yahoo!熱中症情報ページのアイコンclass) → 角度(度)
+const ENG_DIR_DEG = {
+  N: 0, NNE: 22.5, NE: 45, ENE: 67.5,
+  E: 90, ESE: 112.5, SE: 135, SSE: 157.5,
+  S: 180, SSW: 202.5, SW: 225, WSW: 247.5,
+  W: 270, WNW: 292.5, NW: 315, NNW: 337.5,
 };
 
 // 角度 → 矢印絵文字 (8方位に丸める)
@@ -155,11 +163,79 @@ async function fetchOpenMeteo(loc) {
 }
 
 /* ======================================================================
- * 2) Yahoo!天気 (3時間ごと: 天気/気温/降水量/風)
+ * 2) Yahoo!天気 (天気/降水量=3時間ごと、気温/風=1時間ごと)
  * ====================================================================== */
+// Yahoo!天気の「熱中症情報」ページ(例: weather.yahoo.co.jp/weather/heatstroke/3/14/14301/)には
+// 天気・降水量は無いが、気温と風(速度+方位アイコン)が今日・明日分1時間刻みで載っている。
+// スマホのYahoo!天気アプリが見せている「1時間おきの風」はおそらくこのページと同じ値。
+// 通常ページ(3時間おき)より精度が高いので、風はこちらを優先して使う。
+function heatstrokeUrl(loc) {
+  const m = loc.yahooUrl.match(/\/jp\/(\d+)\/\d+\/(\d+)\.html/);
+  if (!m) return null;
+  const [, pref, city] = m;
+  return `https://weather.yahoo.co.jp/weather/heatstroke/3/${pref}/${city}/`;
+}
+
+async function fetchYahooHourlyWind(loc, now) {
+  // key: "YYYY-MM-DDTHH:00" -> { temp, windDir, windDeg, windSpeed }
+  const result = {};
+  const url = heatstrokeUrl(loc);
+  if (!url) return result;
+  try {
+    const res = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+      }, timeout: 15000,
+    });
+    const $ = cheerio.load(res.data);
+    const table = $('table').eq(1); // 1枚目はAIエージェントの見出し用、本体は2枚目
+    let tempCells = null;
+    let windCells = null;
+    table.find('tr').each((_, tr) => {
+      const cells = $(tr).find('td,th');
+      const label = $(cells[0]).text().replace(/\s/g, '');
+      if (label === '気温') tempCells = cells;
+      if (label === '風') windCells = cells;
+    });
+    if (!windCells) return result;
+
+    // データ行は区切りセル無しで「今日0〜23時、明日0〜23時」の最大48列が並ぶ
+    const total = windCells.length - 1; // 先頭はラベル列なので除く
+    for (let i = 0; i < total; i++) {
+      const dayOffset = Math.floor(i / 24);
+      const hh = i % 24;
+      const d = new Date(now);
+      d.setDate(now.getDate() + dayOffset);
+      d.setHours(hh, 0, 0, 0);
+      const key = isoLocal(d);
+
+      const entry = {};
+      if (tempCells) {
+        const t = num($(tempCells[i + 1]).text());
+        if (t != null) entry.temp = t;
+      }
+      const wCell = $(windCells[i + 1]);
+      const speed = num(wCell.find('.num').text());
+      const iconCls = (wCell.find('.icon').attr('class') || '')
+        .split(/\s+/).find((c) => c && c !== 'icon');
+      if (speed != null) entry.windSpeed = speed;
+      if (iconCls) {
+        const deg = ENG_DIR_DEG[iconCls];
+        entry.windDeg = deg ?? null;
+        entry.windDir = deg != null ? degToJpDir(deg) : '静穏';
+      }
+      if (Object.keys(entry).length) result[key] = entry;
+    }
+  } catch (e) {
+    console.warn('[Yahoo熱中症] スクレイピング失敗:', e.message);
+  }
+  return result;
+}
+
 async function fetchYahoo(loc) {
   // key: "YYYY-MM-DDTHH:00" -> { icon, desc, temp, rainMm, windDir, windDeg, windSpeed }
   const result = {};
+  const now = new Date(); // 3時間おき表・1時間おき表の両方で日付の起点を揃える
   try {
     const res = await axios.get(loc.yahooUrl, {
       headers: {
@@ -169,7 +245,6 @@ async function fetchYahoo(loc) {
     const $ = cheerio.load(res.data);
 
     // 今日(=最初) / 明日 の2枚の yjw_table2(時間別) を処理
-    const now = new Date();
     const tables = $('table.yjw_table2');
     tables.each((tableIdx, table) => {
       const rows = $(table).find('tr');
@@ -230,6 +305,20 @@ async function fetchYahoo(loc) {
   } catch (e) {
     console.warn('[Yahoo] スクレイピング失敗:', e.message);
   }
+
+  // 風(と気温)は熱中症情報ページの1時間刻みデータで上書きし、
+  // 天気アイコン・降水量は引き続き3時間おきの値を近い方の時刻から使う。
+  const hourlyWind = await fetchYahooHourlyWind(loc, now);
+  for (const [key, h] of Object.entries(hourlyWind)) {
+    const base = result[key] || result[nearestYahooKey(result, key)] || {};
+    result[key] = {
+      ...base,
+      ...(h.temp != null ? { temp: h.temp } : {}),
+      ...(h.windSpeed != null ? { windSpeed: h.windSpeed } : {}),
+      ...(h.windDir ? { windDir: h.windDir, windDeg: h.windDeg } : {}),
+    };
+  }
+
   return result;
 }
 
