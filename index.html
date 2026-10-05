@@ -71,10 +71,10 @@
   <!-- 表示切替タブ -->
   <div class="mb-2">
     <div class="grid grid-cols-4 gap-1.5">
-      <button data-tab="basic" class="tab-btn">📋 基本</button>
+      <button data-tab="both" class="tab-btn">波風</button>
       <button data-tab="wind" class="tab-btn">🌬️ 風</button>
       <button data-tab="wave" class="tab-btn">🌊 波</button>
-      <button data-tab="both" class="tab-btn">波風</button>
+      <button data-tab="basic" class="tab-btn">☀️ 天気</button>
     </div>
   </div>
 
@@ -98,14 +98,14 @@
       <span class="inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200">☔ 降水1mm/h+</span>
       <span class="inline-block px-2 py-0.5 rounded bg-cyan-100 text-cyan-800 border border-cyan-300">🏄 8:00〜14:00（海に入る時間帯）</span>
     </div>
-タブで表示切替：「基本」＝天気・気温・降水量・潮位／「風」＝天気・潮位＋風4モデル(Yahoo・海快晴・ICON・GFS)／「波」＝天気・潮位＋波2モデル(海快晴・OpenMeteo)／「波風」＝風4＋波2を一覧。強風はセルの背景色で表示（5m/s以上＝琥珀／8m/s以上＝赤）。潮位＝紫、波＝青のバーは大きさの目安。<b>潮位は満潮(極大)を赤字・干潮(極小)を青字</b>、<b>波は0.8m以上を赤字</b>で表示（波高は海快晴に合わせ0.1m刻み）。<b>GFSはWindyアプリ(無料版)と同じモデル</b>なので数値を直接見比べられます。ICON＝独DWD 13km。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。<b>Yahoo!天気は時間別を今日・明日の2日分しか公開していない</b>ため、それ以降の天気・気温・降水はOpen-Meteo(日本では気象庁MSM)の時間別で補完しています。
+タブで表示切替：「天気」＝天気・気温・降水量・潮位／「風」＝天気・潮位＋風4モデル(Yahoo・海快晴・ICON・GFS)／「波」＝天気・潮位＋波2モデル(海快晴・OpenMeteo)／「波風」＝風4＋波2を一覧。強風はセルの背景色で表示（5m/s以上＝琥珀／8m/s以上＝赤）。潮位＝紫、波＝青のバーは大きさの目安。<b>潮位は満潮(極大)を赤字・干潮(極小)を青字</b>、<b>波は0.8m以上を赤字</b>で表示（波高は海快晴に合わせ0.1m刻み）。<b>GFSはWindyアプリ(無料版)と同じモデル</b>なので数値を直接見比べられます。ICON＝独DWD 13km。オンショア＝面荒れ / オフショア＝沖出し（一色海岸の地形補正）。波・潮位は海快晴優先、未取得時はOpen-Meteo Marineで補完（「推定」表記）。<b>Yahoo!天気は時間別を今日・明日の2日分しか公開していない</b>ため、それ以降の天気・気温・降水はOpen-Meteo(日本では気象庁MSM)の時間別で補完しています。
   </footer>
 </div>
 
 <script>
 const $ = (s, el=document) => el.querySelector(s);
 // アプリのバージョン。index.htmlを更新したらこの値を変える(更新検知に使う)
-const APP_VERSION = '20260725a';
+const APP_VERSION = '20261005a';
 
 // iOSのホーム画面アプリはHTMLをキャッシュし続け、内容を変えても反映されない。
 // 配信中のindex.htmlのAPP_VERSIONと比較し、違えば新しいURLで自動リロードする。
@@ -122,7 +122,7 @@ async function checkForUpdate() {
 }
 
 let DATA = null;
-let activeTab = 'basic';
+let activeTab = 'both';
 let GEN_DATE = { md: '', wd: '' }; // 取得日(簡易: M/D, 曜日)
 
 function windCellClass(speed) {
@@ -345,6 +345,7 @@ const LOCATIONS = {
   hayama: { key: 'hayama', short: '葉山', name: '葉山（一色海岸）', umiId: '01170052', lat: 35.27, lon: 139.58 },
   zushi:  { key: 'zushi',  short: '逗子', name: '逗子海岸',         umiId: '11170008', lat: 35.29201, lon: 139.572651 },
   miyake: { key: 'miyake', short: '三宅', name: '三宅島',           umiId: '07150016', lat: 34.080104, lon: 139.565678 },
+  manazuru: { key: 'manazuru', short: '真鶴', name: '真鶴', umiId: '10170007', lat: 35.14831648, lon: 139.149618 },
   mikura: { key: 'mikura', short: '御蔵', name: '御蔵島',           umiId: '10150015', lat: 33.897239, lon: 139.589096 },
 };
 // 開くたび・更新のたびに必ず「葉山(一色海岸)」を初期表示にする(前回選択は記憶しない)
