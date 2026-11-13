@@ -105,7 +105,7 @@
 <script>
 const $ = (s, el=document) => el.querySelector(s);
 // アプリのバージョン。index.htmlを更新したらこの値を変える(更新検知に使う)
-const APP_VERSION = '20261005a';
+const APP_VERSION = '20261114a';
 
 // iOSのホーム画面アプリはHTMLをキャッシュし続け、内容を変えても反映されない。
 // 配信中のindex.htmlのAPP_VERSIONと比較し、違えば新しいURLで自動リロードする。
@@ -366,9 +366,9 @@ function localWindAlert(deg) {
 const numOr = (v) => { if (v == null) return null; const n = parseFloat(v); return (isNaN(n) || n <= -999) ? null : n; };
 const dirCodeToDeg = (c) => (c == null || c === '') ? null : ((((+c % 16) + 16) % 16) * 22.5); // 0=北
 const umiDtToKey = (dt) => { const s = String(dt); return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}T${s.slice(8,10)}:00`; };
-const jget = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
+const jget = async (url) => { const r = await fetch(url, { signal: AbortSignal.timeout(6000) }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
 // 回線が不安定な端末向けにリトライ付き取得(失敗時はnullを返す)
-async function jgetRetry(url, attempts = 3) {
+async function jgetRetry(url, attempts = 2) {
   for (let i = 1; i <= attempts; i++) {
     try { return await jget(url); }
     catch (e) { if (i < attempts) await new Promise((r) => setTimeout(r, 600 * i)); }
